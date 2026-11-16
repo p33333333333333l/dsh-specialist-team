@@ -1,0 +1,25 @@
+{
+  "name": "dsh-specialist-team",
+  "version": "0.1.0",
+  "description": "Task routing, structured specialist assignments and role-scoped tool guards for DSH",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "exports": {".": "./src/index.mjs", "./team": "./vendor/agent-team.mjs", "./tools": "./vendor/tool-agent-team.mjs"},
+  "license": "MIT",
+  "files": ["src", "vendor", "cordis.patch.yml", "README.md", "LICENSE"],
+  "scripts": {"test": "node --test test/*.test.mjs"},
+  "engines": {"node": ">=22", "dsh": "0.2.1-rc.3"},
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/schemastery": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-subagent": "*",
+    "@deepseek-ai/dsh-experimental-agent-team": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-brand": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-scope": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "zod": "^4.4.3"
+  },
+  "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}
+}

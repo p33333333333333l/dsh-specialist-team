@@ -1,0 +1,1472 @@
+diff --git a/docs/config-catalog.md b/docs/config-catalog.md
+index 875563ce39..cbfa48a06b 100644
+--- a/docs/config-catalog.md
++++ b/docs/config-catalog.md
+@@ -841,7 +841,7 @@ export interface Config {
+ ## `@deepseek-ai/dsh-experimental-agent-team`
+ 
+ - `inject`: `agents` · `sessions` · `sessionPersistence` · `sessionProjections` · `subagents`
+-- `source`: [`packages/experimental/agent-team/src/types.ts:153`](../packages/experimental/agent-team/src/types.ts)
++- `source`: [`packages/experimental/agent-team/src/types.ts:154`](../packages/experimental/agent-team/src/types.ts)
+ 
+ ```ts config-catalog
+ /** Team-service deployment limits. */
+@@ -1266,8 +1266,8 @@ export interface Config {
+ 
+ ## `@deepseek-ai/dsh-experimental-tool-agent-team`
+ 
+-- `inject`: `agents` · `agentTeams` · `tools` · `systemPrompt`
+-- `source`: [`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
++- `inject`: `agents` · `agentTeams` · `tools` · `systemPrompt` · `subagents` · `sessionProjections`
++- `source`: [`packages/experimental/tool-agent-team/src/index.ts:34`](../packages/experimental/tool-agent-team/src/index.ts)
+ 
+ ```ts config-catalog
+ /** Tool routing configuration. */
+@@ -1278,6 +1278,22 @@ export interface Config {
+   readonly freshProvider?: string
+   /** Continuable-subagent provider used for completed-prefix fork teammates. */
+   readonly forkProvider?: string
++  /** Enable per-child model choices under the Session's durable allowed-model policy. */
++  readonly modelSelectionSettings?: boolean
++  /** Configurable preferences, selected by the Lead's task category. Missing entries inherit. */
++  readonly models?: Partial<Record<Specialist, SpecialistModel | undefined>>
++}
++
++type Specialist = typeof SPECIALISTS[number]
++
++/** Exact LLM route preferred for a specialist task. */
++export interface SpecialistModel {
++  /** Exact LLM provider id authorized for the Session. */
++  readonly provider: string
++  /** Model id resolved by the selected provider. */
++  readonly model: string
++  /** Provider-supported reasoning effort; omission uses compatible inherited settings or the model default. */
++  readonly reasoningEffort?: string
+ }
+ ```
+ <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->
+@@ -4039,7 +4055,7 @@ export interface Config {
+ 
+ - `inject`: `tools` · `subagents` · `systemPrompt` · `sessionProjections`
+ - `refs`: [`AgentOptions`](subsystems/core.md)
+-- `source`: [`packages/subagent/tool-subagent/src/index.ts:50`](../packages/subagent/tool-subagent/src/index.ts)
++- `source`: [`packages/subagent/tool-subagent/src/index.ts:48`](../packages/subagent/tool-subagent/src/index.ts)
+ 
+ ```ts config-catalog
+ /** Config: which registered provider this tool delegates to, plus child defaults. */
+diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
+index 52b98e69d8..50dbdf5b6b 100644
+--- a/docs/config-catalog.zh.md
++++ b/docs/config-catalog.zh.md
+@@ -843,7 +843,7 @@ export interface Config {
+ ## `@deepseek-ai/dsh-experimental-agent-team`
+ 
+ - `inject`: `agents` · `sessions` · `sessionPersistence` · `sessionProjections` · `subagents`
+-- `source`: [`packages/experimental/agent-team/src/types.ts:153`](../packages/experimental/agent-team/src/types.ts)
++- `source`: [`packages/experimental/agent-team/src/types.ts:154`](../packages/experimental/agent-team/src/types.ts)
+ 
+ ```ts config-catalog
+ /** Team-service deployment limits. */
+@@ -1268,8 +1268,8 @@ export interface Config {
+ 
+ ## `@deepseek-ai/dsh-experimental-tool-agent-team`
+ 
+-- `inject`: `agents` · `agentTeams` · `tools` · `systemPrompt`
+-- `source`: [`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
++- `inject`: `agents` · `agentTeams` · `tools` · `systemPrompt` · `subagents` · `sessionProjections`
++- `source`: [`packages/experimental/tool-agent-team/src/index.ts:34`](../packages/experimental/tool-agent-team/src/index.ts)
+ 
+ ```ts config-catalog
+ /** Tool routing configuration. */
+@@ -1280,6 +1280,22 @@ export interface Config {
+   readonly freshProvider?: string
+   /** Continuable-subagent provider used for completed-prefix fork teammates. */
+   readonly forkProvider?: string
++  /** Enable per-child model choices under the Session's durable allowed-model policy. */
++  readonly modelSelectionSettings?: boolean
++  /** Configurable preferences, selected by the Lead's task category. Missing entries inherit. */
++  readonly models?: Partial<Record<Specialist, SpecialistModel | undefined>>
++}
++
++type Specialist = typeof SPECIALISTS[number]
++
++/** Exact LLM route preferred for a specialist task. */
++export interface SpecialistModel {
++  /** Exact LLM provider id authorized for the Session. */
++  readonly provider: string
++  /** Model id resolved by the selected provider. */
++  readonly model: string
++  /** Provider-supported reasoning effort; omission uses compatible inherited settings or the model default. */
++  readonly reasoningEffort?: string
+ }
+ ```
+ <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->
+@@ -4041,7 +4057,7 @@ export interface Config {
+ 
+ - `inject`: `tools` · `subagents` · `systemPrompt` · `sessionProjections`
+ - `refs`: [`AgentOptions`](subsystems/core.zh.md)
+-- `source`: [`packages/subagent/tool-subagent/src/index.ts:50`](../packages/subagent/tool-subagent/src/index.ts)
++- `source`: [`packages/subagent/tool-subagent/src/index.ts:48`](../packages/subagent/tool-subagent/src/index.ts)
+ 
+ ```ts config-catalog
+ /** Config: which registered provider this tool delegates to, plus child defaults. */
+diff --git a/docs/subsystems/agent-team.i18n.yaml b/docs/subsystems/agent-team.i18n.yaml
+index a4c599562f..441aeb2691 100644
+--- a/docs/subsystems/agent-team.i18n.yaml
++++ b/docs/subsystems/agent-team.i18n.yaml
+@@ -6,8 +6,8 @@
+   en: f571e223220bb616
+   zh: dd7e37fdf359eeae
+ /agent-teams/identity-and-roster:
+-  en: df72d9409b89714d
+-  zh: 982934dd18864ca2
++  en: 290cb3a316be540d
++  zh: ee57c7aee94914b7
+ /agent-teams/messages-and-historical-mailbox:
+   en: 2aed7dd369f47747
+   zh: 4f080e50c584ad37
+diff --git a/docs/subsystems/agent-team.md b/docs/subsystems/agent-team.md
+index c5c6a0f775..61a2f8d9c4 100644
+--- a/docs/subsystems/agent-team.md
++++ b/docs/subsystems/agent-team.md
+@@ -23,6 +23,8 @@ interface TeamMemberSnapshot {
+ 
+ Every member starts in `provisioning` and reaches exactly one terminal roster phase, `active` or `failed`. Roster `running`/`inactive` status is derived separately and never rewrites this record.
+ 
++`SpawnTeammateRequest.agentOptions?: AgentOptions` supplies the child LLM options independently of the continuation transport in `provider`. Team passes them to the [subagent runtime](subagent.md), whose child descriptor preserves the resolved provider, model, and effort for restoration. Tool callers validate model selections before Team provisioning.
++
+ ## Messages and historical mailbox
+ 
+ New sends return inbox acceptance or reject. The target stores the existing `agent-message` source with the real sender Session id and a sender-name content prefix. Team has no new-message outbox or resend deduplication. The [package contract](../../packages/experimental/agent-team/README.md#understand-the-implementation) defines persistence. The following mailbox types remain readable so historical Lead logs still replay; Team does not deliver their pending records.
+diff --git a/docs/subsystems/agent-team.zh.md b/docs/subsystems/agent-team.zh.md
+index 2e3c0b040e..2d444ff465 100644
+--- a/docs/subsystems/agent-team.zh.md
++++ b/docs/subsystems/agent-team.zh.md
+@@ -23,6 +23,8 @@ interface TeamMemberSnapshot {
+ 
+ 每个 member 都从 `provisioning` 开始，并且只到达一个终态 roster phase：`active` 或 `failed`。roster 的 `running`／`inactive` 状态单独派生，绝不会重写该记录。
+ 
++`SpawnTeammateRequest.agentOptions?: AgentOptions` 指定子代理的 LLM 选项，与 `provider` 中的 continuation transport 独立。Team 将其传给[子代理运行时](subagent.zh.md)，由 child descriptor 保存解析后的 provider、model 和 effort 以供恢复。模型工具在 Team provisioning 之前验证模型选择。
++
+ ## 消息与历史 mailbox
+ 
+ 新发送返回 inbox 接收结果或拒绝。目标保存现有 `agent-message` source，包含真实发送者 Session id 和发送者名称正文前缀。Team 不为新消息提供 outbox 或重发去重。[包约定](../../packages/experimental/agent-team/README.zh.md#understand-the-implementation)定义持久化。以下 mailbox 类型继续可读，以便历史 Lead 日志仍能回放；Team 不投递其中的 pending 记录。
+diff --git a/docs/tool-catalog.i18n.yaml b/docs/tool-catalog.i18n.yaml
+index 4710703fe5..f7f6634162 100644
+--- a/docs/tool-catalog.i18n.yaml
++++ b/docs/tool-catalog.i18n.yaml
+@@ -9,7 +9,7 @@
+   en: 6cc2cd9ced70bb09
+   zh: 1c0e6cb4ba2ed637
+ /tool-schema-catalog/tool-package-map:
+-  en: e72ad7af437fa362
++  en: c1066a363de27e23
+   zh: d8f3683a4efe01b0
+ /tool-schema-catalog/deepseek-ai-dsh-plugin-manager:
+   en: e0143916bb634762
+diff --git a/docs/tool-catalog.md b/docs/tool-catalog.md
+index cfa5192198..2cdf1b731c 100644
+--- a/docs/tool-catalog.md
++++ b/docs/tool-catalog.md
+@@ -41,7 +41,7 @@ This table connects model-visible tool names to the plugin package and service s
+ | `@deepseek-ai/dsh-tool-subagent` | `list_subagent_models`, `subagent` | `ctx.tools`, `ctx.subagents`, `ctx.systemPrompt`, `ctx.llm for model discovery and selected-route validation` | `tool/call`, `tool/result`, `child session events through the chosen provider` | `subagent`, `subagent_fork` | The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Each instance selects its backend through `provider` and reads model-selection settings through `modelSelectionSettings`. Every delegation returns a child id promptly; local children accept follow-ups, while external backends report their single execution automatically. |
+ | `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`, `list_agents`, `send_message` | `ctx.tools`, `ctx.subagents`, `ctx.agents and ctx.sessionProjections (list_agents only)` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The globally named discovery, interruption, and local-message tools over managed subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries). |
+ | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands and PTY sends are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
+-| `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`, `list_agents`, `send_message`, `spawn_teammate`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update`, `wait_agent` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `an exact live Team member Agent` | `tool/call`, `team/member`, `team/task`, `agent/inbox/spliced`, `user/message on inbox claim`, `tool/result` | - | All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names. |
++| `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`, `list_agents`, `send_message`, `spawn_teammate`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update`, `wait_agent` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `ctx.subagents`, `ctx.sessionProjections`, `an exact live Team member Agent` | `tool/call`, `team/member`, `team/task`, `agent/inbox/spliced`, `user/message on inbox claim`, `tool/result` | - | All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names. |
+ | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
+ | `@deepseek-ai/dsh-tool-working-directory` | `working_directory` | `ctx.tools`, `ctx.workingDirectory` | `tool/call`, `working-directory/change`, `user context for directory changes`, `tool/result` | - | Reads or changes the calling Session directory. Existing shells and processes retain their own directories; origin metadata and permission roots stay fixed. |
+ | `@deepseek-ai/dsh-experimental-tool-worktree` | `create_worktree` | `ctx.tools`, `ctx.worktrees`, `a calling Agent` | `tool/call`, `Git branch and checkout`, `working-directory/change`, `tool/result` | - | Explicit experimental composition only. Creates a new branch and checkout from a pinned local commit under existing write permissions, then changes the Session directory. Leaving retains the branch and checkout. |
+diff --git a/packages/experimental/agent-team/README.i18n.yaml b/packages/experimental/agent-team/README.i18n.yaml
+index 017a9d603e..8e1947c3f6 100644
+--- a/packages/experimental/agent-team/README.i18n.yaml
++++ b/packages/experimental/agent-team/README.i18n.yaml
+@@ -24,8 +24,8 @@
+   en: a820f021cfea5d87
+   zh: 7cbaadaf808971d3
+ /deepseek-ai-dsh-experimental-agent-team/use-this-package/teammates:
+-  en: 5a314d1f80ecd31b
+-  zh: c34e6a93dd1e2045
++  en: 317bef67aac800dd
++  zh: 8ae529286ac63f3b
+ /deepseek-ai-dsh-experimental-agent-team/use-this-package/messages-between-teammates:
+   en: 7d55ac289b8da711
+   zh: 6a15f941bb44356f
+diff --git a/packages/experimental/agent-team/README.md b/packages/experimental/agent-team/README.md
+index 69d602f079..7611825df3 100644
+--- a/packages/experimental/agent-team/README.md
++++ b/packages/experimental/agent-team/README.md
+@@ -63,6 +63,8 @@ The roster shows every member with its role (`lead` or `teammate`) and current s
+ 
+ Only the Lead can create teammates or interrupt them.
+ 
++Programmatic `spawnTeammate` calls may pass `agentOptions` for the child LLM provider, model, and reasoning effort. The request's `provider` still identifies the continuation transport (`spawn` or `fork`). The existing subagent descriptor records the effective child route and restores it when a stored teammate receives another message; changing the Lead's route does not reroute an existing member. Model-facing selection policy and live route validation belong to the Team tool package, before provisioning reserves a name.
++
+ ### Messages between teammates
+ 
+ Any member can send to another member or the Lead. Each attempt either returns the target inbox `MessageId` or throws. Team does not retain unaccepted send intent, retry new messages after restart, or deduplicate explicit resends.
+diff --git a/packages/experimental/agent-team/README.zh.md b/packages/experimental/agent-team/README.zh.md
+index 37bcdafded..98eb91b28a 100644
+--- a/packages/experimental/agent-team/README.zh.md
++++ b/packages/experimental/agent-team/README.zh.md
+@@ -63,6 +63,8 @@ roster 显示每个成员的职责（`lead` 或 `teammate`）与当前状态：`
+ 
+ 只有 Lead 可以创建 teammate 或中断它们。
+ 
++通过程序调用 `spawnTeammate` 时，可在 `agentOptions` 中传入子级 LLM 的 provider、model 与 reasoning effort；请求的 `provider` 仍表示 continuation transport（`spawn` 或 `fork`）。现有子代理描述符会保存实际路由，并在存储的 teammate 收到新消息时恢复；更改 Lead 的路由不会重选既有成员的模型。面向模型的授权策略和实时路由校验由 Team 工具包负责，在创建成员、占用名字之前执行。
++
+ ### teammate 之间的消息
+ 
+ 任何成员都可向其他成员或 Lead 发送消息。每次尝试要么返回目标 inbox 的 `MessageId`，要么抛出错误。Team 不保留尚未接收的发送意图，不在重启后重试新消息，也不对显式重发去重。
+diff --git a/packages/experimental/agent-team/src/roster.ts b/packages/experimental/agent-team/src/roster.ts
+index 7b1047a0a2..c4f14a81f0 100644
+--- a/packages/experimental/agent-team/src/roster.ts
++++ b/packages/experimental/agent-team/src/roster.ts
+@@ -269,6 +269,7 @@ export class TeamRoster {
+         request: {
+           prompt: request.prompt,
+           parent: root,
++          ...request.agentOptions === undefined ? {} : { agentOptions: request.agentOptions },
+         },
+         signal,
+       })
+diff --git a/packages/experimental/agent-team/src/types.ts b/packages/experimental/agent-team/src/types.ts
+index 465f6bbf12..9f45159d73 100644
+--- a/packages/experimental/agent-team/src/types.ts
++++ b/packages/experimental/agent-team/src/types.ts
+@@ -1,5 +1,6 @@
+ /** Public Agent Teams identities, durable records, and service request values. */
+ 
++import type { AgentOptions } from '@deepseek-ai/dsh-agent'
+ import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+ import type { Branded } from '@deepseek-ai/dsh-brand'
+ import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+@@ -167,7 +168,10 @@ export interface SpawnTeammateRequest {
+   readonly description: string
+   readonly prompt: ContentBlock[]
+   readonly context: 'fresh' | 'fork'
++  /** Continuation transport id, independent of the child LLM provider. */
+   readonly provider: string
++  /** Child LLM options retained by the continuation descriptor across resume. */
++  readonly agentOptions?: AgentOptions
+   readonly signal: AbortSignal
+ }
+ 
+diff --git a/packages/experimental/agent-team/tests/persistence.spec.ts b/packages/experimental/agent-team/tests/persistence.spec.ts
+index a0cbf244e4..5e7fc91662 100644
+--- a/packages/experimental/agent-team/tests/persistence.spec.ts
++++ b/packages/experimental/agent-team/tests/persistence.spec.ts
+@@ -7,7 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
+ import type { Agent } from '@deepseek-ai/dsh-agent'
+ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+-import { createUserMessage } from '@deepseek-ai/dsh-llm'
++import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+ import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+ import SubagentService, { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
+@@ -161,6 +161,51 @@ async function persistedChild(
+ 
+ for (const backend of backends) {
+   describe(`${backend.name} Agent Teams recovery`, () => {
++    it('preserves the selected child LLM route and effort across cold mailbox resume', async () => {
++      const storageRoot = mkdtempSync(join(tmpdir(), 'dsh-team-model-recovery-'))
++      roots.push(storageRoot)
++      const reasoning = {
++        efforts: [{ id: ReasoningEffortId('high'), name: 'High' }],
++        defaultEffort: ReasoningEffortId('high'),
++      }
++      const first = await stack(backend, storageRoot, [])
++      const initial = new MockAdapter([textResponse('first selected-route answer')], reasoning)
++      first.ctx.llm.registerAdapter(['specialist'], initial)
++      const rootId = SessionId('selected-route-root')
++      const lead = await first.ctx.agentLoop.create(rootId, { provider: 'mock', model: 'parent' })
++      const started = await first.ctx.agentTeams.spawnTeammate(lead, {
++        name: 'route-worker', description: 'cold route recovery',
++        prompt: [{ type: 'text', text: 'first task' }], context: 'fresh', provider: 'spawn',
++        agentOptions: { provider: 'specialist', model: 'expert', reasoningEffort: ReasoningEffortId('high') },
++        signal: SIGNAL,
++      })
++      await vi.waitFor(() => { expect(first.ctx.agents.get(started.member.id)).toBeUndefined() })
++      expect(initial.requests[0]).toMatchObject({ provider: 'specialist', model: 'expert', reasoningEffort: 'high' })
++      const events = await storedEvents(first.ctx, started.member.id)
++      expect(events.find(event => event.type === 'subagent/descriptor')?.data).toMatchObject({
++        agentProvider: 'specialist', agentModel: 'expert', agentReasoningEffort: 'high',
++      })
++      await first.ctx.sessions.flush(lead.session)
++      await first.dispose()
++
++      const second = await stack(backend, storageRoot, [])
++      const resumed = new MockAdapter(['hang'], reasoning)
++      second.ctx.llm.registerAdapter(['specialist'], resumed)
++      const rootHandle = await second.ctx.agents.resume({
++        resumeSessionId: rootId, agentOptions: { provider: 'mock', model: 'changed-parent' },
++      })
++      await second.ctx.agentTeams.sendMessage(rootHandle.agent, {
++        target: 'route-worker', content: [{ type: 'text', text: 'second task' }], signal: SIGNAL,
++      })
++      await vi.waitFor(() => { expect(resumed.requests).toHaveLength(1) })
++      expect(resumed.requests[0]).toMatchObject({ provider: 'specialist', model: 'expert', reasoningEffort: 'high' })
++      expect(second.ctx.agents.get(started.member.id)?.options).toMatchObject({
++        provider: 'specialist', model: 'expert', reasoningEffort: 'high',
++      })
++      expect(second.adapter.requests).toEqual([])
++      await rootHandle.dispose()
++      await second.dispose()
++    })
+     it('restores a directly accepted target inbox from its flushed crash prefix without Team intent', async () => {
+       const liveRoot = mkdtempSync(join(tmpdir(), 'dsh-team-live-'))
+       const crashRoot = mkdtempSync(join(tmpdir(), 'dsh-team-crash-'))
+diff --git a/packages/experimental/agent-team/tests/team.spec.ts b/packages/experimental/agent-team/tests/team.spec.ts
+index 34a9a25afd..fa19f201dd 100644
+--- a/packages/experimental/agent-team/tests/team.spec.ts
++++ b/packages/experimental/agent-team/tests/team.spec.ts
+@@ -141,6 +141,24 @@ async function waitRunning(ctx: Context, id: SessionId): Promise<Agent> {
+ }
+ 
+ describe('Team identity and provisioning', () => {
++  it.each(['fresh', 'fork'] as const)('passes child LLM options through %s continuation transport', async context => {
++    const { ctx, lead } = await setup([])
++    const expert = new MockAdapter(['hang'])
++    ctx.llm.registerAdapter(['specialist'], expert)
++    const started = await ctx.agentTeams.spawnTeammate(lead, {
++      name: 'specialist-worker',
++      description: 'separate transport and model route',
++      prompt: content('inspect the selected route'),
++      context,
++      provider: context === 'fresh' ? 'spawn' : 'fork',
++      agentOptions: { provider: 'specialist', model: 'expert-model' },
++      signal: SIGNAL,
++    })
++    const child = await waitRunning(ctx, started.member.id)
++    expect(child.options).toMatchObject({ provider: 'specialist', model: 'expert-model' })
++    await vi.waitFor(() => { expect(expert.requests).toHaveLength(1) })
++    expect(expert.requests[0]).toMatchObject({ provider: 'specialist', model: 'expert-model' })
++  })
+   it('rejects missing and failed authoritative Team projections', async () => {
+     const first = await setup([])
+     const journal = teamInternals(first.ctx).journal
+diff --git a/packages/experimental/tool-agent-team/README.i18n.yaml b/packages/experimental/tool-agent-team/README.i18n.yaml
+index f541bc0b5a..62d0f73258 100644
+--- a/packages/experimental/tool-agent-team/README.i18n.yaml
++++ b/packages/experimental/tool-agent-team/README.i18n.yaml
+@@ -21,8 +21,14 @@
+   en: 60ea90ce57cca56f
+   zh: 181e48b7d4dcf755
+ /deepseek-ai-dsh-experimental-tool-agent-team/use-this-package/smallest-working-example:
+-  en: 9af650a79711b3b3
+-  zh: 2930360011b544e0
++  en: f81539016c9f8bbc
++  zh: f8dc6da7c2365056
++/deepseek-ai-dsh-experimental-tool-agent-team/use-this-package/task-aware-model-selection:
++  en: d6d5346f0be1bba8
++  zh: 2ac453ad07edac85
++/deepseek-ai-dsh-experimental-tool-agent-team/use-this-package/local-same-release-builds:
++  en: 1c4630621db61042
++  zh: bf9c5f1840655f09
+ /deepseek-ai-dsh-experimental-tool-agent-team/use-this-package/what-the-model-can-do:
+   en: be42811bbcc3b438
+   zh: 014bd055ca694315
+diff --git a/packages/experimental/tool-agent-team/README.md b/packages/experimental/tool-agent-team/README.md
+index 1afed86720..7eec0f7ac8 100644
+--- a/packages/experimental/tool-agent-team/README.md
++++ b/packages/experimental/tool-agent-team/README.md
+@@ -33,7 +33,7 @@ Choose it when the model should create and coordinate teammates by itself rather
+ 
+ ### Smallest working example
+ 
+-The smallest addition to an existing composition is the two-package fragment from the [agent-team README](../agent-team/README.md#smallest-working-setup): durable session storage, the team domain package, and this package. The plugin itself takes two optional settings:
++The smallest addition to an existing composition is the two-package fragment from the [agent-team README](../agent-team/README.md#smallest-working-setup): durable session storage, the team domain package, and this package. The default transport settings are:
+ 
+ ```yaml
+ - id: tool-agent-team
+@@ -52,6 +52,32 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
+ 
+ Try it by asking the Lead model: "create a teammate named reviewer to check the diff, then send reviewer the change summary". The model calls the creation tool and then the messaging tool.
+ 
++### Task-aware model selection
++
++Enable `modelSelectionSettings: true` alongside the Host's `@deepseek-ai/dsh-tool-subagent/model-selection-settings`, with that Host setting's `enabled: true` and exact `allowedModels`. New Sessions capture their authority durably; existing Sessions without captured authority remain disabled. Changing Host settings does not expand existing Session authority.
++
++The Lead selects `specialist` from the task: `designer`, `researcher`, `engineer`, `architect`, or `verifier`. The optional `models` map contains configurable preferences, not measured model rankings:
++
++```yaml
++config:
++  freshProvider: spawn
++  forkProvider: fork
++  modelSelectionSettings: true
++  models:
++    engineer:
++      provider: your-llm-provider
++      model: your-model-id
++      reasoningEffort: high
++```
++
++An explicit `provider` and `model` pair on `spawn_teammate`, plus optional `reasoning_effort`, overrides the preference. Changing the explicit route without an effort uses the selected model's default effort. A missing preference inherits compatible parent values. `freshProvider` and `forkProvider` select subagent transport; `models.*.provider` selects the LLM provider.
++
++Both preferences and explicit selection must pass the Session allowlist and live adapter preflight. Unknown providers, invalid models, disallowed routes, and unsupported efforts fail before creating a roster member or reserving its name; no fallback model is substituted. Enabled Lead scopes register `list_subagent_models` once for route and effort discovery. The child descriptor retains its selected route and effort for cold restoration.
++
++### Local same-release builds
++
++For a desktop running this exact package release, [build-specialist-team-local.ts](../../../scripts/build-specialist-team-local.ts) accepts `--runtime <installed-dsh-root>` and `--out <local-plugin-directory>`. It checks the installed Team version and emits the Team service, Team tools, and ordinary subagent tools with shared model-selection helpers; other peers resolve through the installed runtime. Override the existing profile entry names with these local modules and retain their full configuration. Restart DSH and use a new Session to activate model selection; existing Session authority is preserved. This is a release-specific backport, not a replacement for a full desktop upgrade.
++
+ ### What the model can do
+ 
+ The nine tools group into four capabilities:
+diff --git a/packages/experimental/tool-agent-team/README.zh.md b/packages/experimental/tool-agent-team/README.zh.md
+index 2c449b081e..b33d420e36 100644
+--- a/packages/experimental/tool-agent-team/README.zh.md
++++ b/packages/experimental/tool-agent-team/README.zh.md
+@@ -33,7 +33,7 @@ kind: "package-reference"
+ 
+ ### 最小工作示例
+ 
+-对现有组合的最小增量是 [agent-team README](../agent-team/README.zh.md#smallest-working-setup) 中的两包片段：持久会话存储、团队领域包与本包。插件本身只有两个可选设置：
++对现有组合的最小增量是 [agent-team README](../agent-team/README.zh.md#smallest-working-setup) 中的两包片段：持久会话存储、团队领域包与本包。默认的创建方式配置如下：
+ 
+ ```yaml
+ - id: tool-agent-team
+@@ -52,6 +52,32 @@ kind: "package-reference"
+ 
+ 试试这样要求 Lead 模型：「创建一个名为 reviewer 的 teammate 检查 diff，再把变更摘要发给 reviewer」。模型会调用创建工具，然后调用消息工具。
+ 
++### 按任务选择模型
++
++将 `modelSelectionSettings: true` 配合 Host 的 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 启用，并在该 Host 设置中配置 `enabled: true` 与精确的 `allowedModels`。新 Session 会保存模型选择权限；已有 Session 没有保存的权限时保持关闭。修改 Host 设置不会扩大已有 Session 的权限。
++
++Lead 根据任务选用 `specialist`：`designer`、`researcher`、`engineer`、`architect` 或 `verifier`。`models` 是可配置的偏好表，不代表经过测评的模型排名。例如：
++
++```yaml
++config:
++  freshProvider: spawn
++  forkProvider: fork
++  modelSelectionSettings: true
++  models:
++    engineer:
++      provider: your-llm-provider
++      model: your-model-id
++      reasoningEffort: high
++```
++
++`spawn_teammate` 可以显式传入成对的 `provider`、`model` 和可选的 `reasoning_effort`，覆盖分类偏好；显式更换路由且省略 effort 时，使用新模型默认值。没有分类偏好时沿用兼容的父模型设置。`freshProvider` / `forkProvider` 选择子代理创建方式，与 `models.*.provider` 的 LLM 提供方是不同概念。
++
++分类偏好与显式选择都必须通过 Session 的 allowedModels 和实时 LLM 适配器校验。未知提供方、无效模型、未授权路由或不支持的 effort 会在创建成员之前报错，不占用名字，也不会自动换用其他模型。启用选择后，Lead 作用域提供一次 `list_subagent_models` 以查询可选路由和 effort。子 Session 的描述符保存选定路由与 effort，供冷恢复复用。
++
++### 同发布版本的本地构建
++
++桌面运行本包的相同发布版本时，可使用 [build-specialist-team-local.ts](../../../scripts/build-specialist-team-local.ts)，传入 `--runtime <已安装的dsh根目录>` 和 `--out <本地插件目录>`。脚本检查已安装 Team 的版本，输出 Team 服务、Team 工具及普通子代理工具，并共享选模辅助模块；其他依赖使用已安装运行时。将 profile 中既有条目的模块名称覆盖为这些本地入口，保留完整配置。重启 DSH 并新建 Session 后启用模型选择；既有 Session 的权限记录保持原样。这是特定发布版本的回移，不能代替完整桌面升级。
++
+ ### 模型能做什么
+ 
+ 九个工具分为四类能力：
+diff --git a/packages/experimental/tool-agent-team/package.json b/packages/experimental/tool-agent-team/package.json
+index 77c13c6072..e68817ce80 100644
+--- a/packages/experimental/tool-agent-team/package.json
++++ b/packages/experimental/tool-agent-team/package.json
+@@ -32,6 +32,10 @@
+     "@deepseek-ai/schemastery": "workspace:~"
+   },
+   "peerDependencies": {
++    "@deepseek-ai/dsh-llm": "workspace:*",
++    "@deepseek-ai/dsh-subagent": "workspace:*",
++    "@deepseek-ai/dsh-session-projection": "workspace:*",
++    "@deepseek-ai/dsh-tool-subagent": "workspace:*",
+     "@deepseek-ai/dsh-agent": "workspace:*",
+     "@deepseek-ai/dsh-session": "workspace:*",
+     "@deepseek-ai/dsh-system-prompt": "workspace:*",
+@@ -40,6 +44,9 @@
+     "@deepseek-ai/cordis": "workspace:~"
+   },
+   "devDependencies": {
++    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
++    "@deepseek-ai/cordis-plugin-include": "workspace:~",
++    "@deepseek-ai/dsh-tool-subagent": "workspace:*",
+     "@deepseek-ai/dsh-agent": "workspace:*",
+     "@deepseek-ai/dsh-agent-loop": "workspace:*",
+     "@deepseek-ai/dsh-agent-loop-testkit": "workspace:*",
+diff --git a/packages/experimental/tool-agent-team/src/index.ts b/packages/experimental/tool-agent-team/src/index.ts
+index bc827c5f8c..367972e10b 100644
+--- a/packages/experimental/tool-agent-team/src/index.ts
++++ b/packages/experimental/tool-agent-team/src/index.ts
+@@ -6,12 +6,29 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
+ import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
+ import type { TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
+ import { defineTool } from '@deepseek-ai/dsh-tools'
++import { parentAgentOptionsForDelegation } from '@deepseek-ai/dsh-subagent'
++import { requestedAgentOptions, assertAllowedModelSelection, preflightChildLlmRoute, hasDelegationModelRequest } from '@deepseek-ai/dsh-tool-subagent/model-selection'
++import { selectSubagentModelSelection, subagentModelSelectionProjectionDefinition } from '@deepseek-ai/dsh-tool-subagent/model-selection-state'
++import { registerListSubagentModels } from '@deepseek-ai/dsh-tool-subagent/list-models'
+ import type { InferValue, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
+ 
+ /** Cordis plugin name. */
+ export const name = 'tool-agent-team'
+ /** Services required by the Team tool plugin. */
+-export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt']
++export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt', 'subagents', 'sessionProjections']
++
++const SPECIALISTS = ['designer', 'researcher', 'engineer', 'architect', 'verifier'] as const
++type Specialist = typeof SPECIALISTS[number]
++
++/** Exact LLM route preferred for a specialist task. */
++export interface SpecialistModel {
++  /** Exact LLM provider id authorized for the Session. */
++  readonly provider: string
++  /** Model id resolved by the selected provider. */
++  readonly model: string
++  /** Provider-supported reasoning effort; omission uses compatible inherited settings or the model default. */
++  readonly reasoningEffort?: string
++}
+ 
+ /** Tool routing configuration. */
+ export interface Config {
+@@ -21,13 +38,33 @@ export interface Config {
+   readonly freshProvider?: string
+   /** Continuable-subagent provider used for completed-prefix fork teammates. */
+   readonly forkProvider?: string
++  /** Enable per-child model choices under the Session's durable allowed-model policy. */
++  readonly modelSelectionSettings?: boolean
++  /** Configurable preferences, selected by the Lead's task category. Missing entries inherit. */
++  readonly models?: Partial<Record<Specialist, SpecialistModel | undefined>>
+ }
+ 
++type ResolvedConfig = Required<Omit<Config, 'models'>> & Pick<Config, 'models'>
++
++const SpecialistModelSchema = z.union([z.const(undefined), z.object({
++  provider: z.string().min(1).required(),
++  model: z.string().min(1).required(),
++  reasoningEffort: z.string().min(1),
++})])
++
+ /** Loader schema for the opt-in Team tool plugin. */
+ export const Config: z<Config> = z.object({
+   interrupt: z.boolean().default(true),
+   freshProvider: z.string().default('spawn'),
+   forkProvider: z.string().default('fork'),
++  modelSelectionSettings: z.boolean().default(false),
++  models: z.object({
++    designer: SpecialistModelSchema,
++    researcher: SpecialistModelSchema,
++    engineer: SpecialistModelSchema,
++    architect: SpecialistModelSchema,
++    verifier: SpecialistModelSchema,
++  }),
+ })
+ 
+ /** Model-facing collaboration guidance shared by Lead and teammates. */
+@@ -165,11 +202,16 @@ function callingAgent(agent: Agent | undefined, toolName: string): Agent {
+ }
+ 
+ /** Register the complete Team tool set in one exact Agent scope. */
+-function install(agent: Agent, ctx: Context, config: Required<Config>): () => void {
++function install(agent: Agent, ctx: Context, config: ResolvedConfig): () => void {
+   const scoped = agent.ctx
++  const policy = selectSubagentModelSelection(ctx, agent.session, config.modelSelectionSettings)
++  const selectionEnabled = policy !== undefined
+   const disposers: Array<() => unknown> = []
+   const register = (disposer: () => unknown): void => { disposers.push(disposer) }
+   try {
++    if (policy !== undefined && ctx.agentTeams.membership(agent).role === 'lead') {
++      register(registerListSubagentModels(scoped, policy))
++    }
+     register(scoped.systemPrompt.section({
+       name: 'team:policy',
+       order: scoped.systemPrompt.getSectionOrder('TEAM_POLICY'),
+@@ -191,7 +233,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
+ 
+     register(scoped.tools.register(defineTool({
+       name: 'spawn_teammate',
+-      description: 'Create one named, durable teammate. Only the Team Lead may call this tool.',
++      description: 'Create one named, durable teammate. Only the Team Lead may call this tool.' + (selectionEnabled ? ' Choose specialist from the task to apply its configured model preference; explicit provider/model choices override it after list_subagent_models discovery.' : ''),
+       parameters: {
+         name: { type: 'string', required: true, description: 'Unique lower-kebab-case teammate name.' },
+         description: { type: 'string', required: true, description: 'Short description of the delegated responsibility.' },
+@@ -201,17 +243,52 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
+           enum: ['fresh', 'fork'],
+           description: 'fresh starts without Lead history; fork inherits completed Lead turns. Defaults to fresh.',
+         },
++        ...selectionEnabled ? {
++          specialist: {
++            type: 'string', enum: SPECIALISTS,
++            description: 'Choose the category from the task: designer, researcher, engineer, architect, or verifier. Uses its configured model preference when present.',
++          },
++          provider: { type: 'string', description: 'Child LLM provider id. Supply with model; overrides the specialist preference. Inspect list_subagent_models first.' },
++          model: { type: 'string', description: 'Child LLM model id. Supply with provider.' },
++          reasoning_effort: { type: 'string', description: 'Optional reasoning effort supported by the selected child model.' },
++        } : {},
+       },
+       output: jsonOutput(SPAWN_VALUE_SCHEMA),
+       async execute(args, exec) {
+         const agent = callingAgent(exec.agent, 'spawn_teammate')
+         const context = args.context ?? 'fresh'
++        const preference = args.specialist === undefined ? undefined : config.models?.[args.specialist]
++        const explicitRoute = args.provider !== undefined || args.model !== undefined
++        const modelRequest = {
++          ...!explicitRoute && preference !== undefined ? {
++            provider: preference.provider,
++            model: preference.model,
++            reasoning_effort: preference.reasoningEffort,
++          } : {},
++          ...args.provider === undefined ? {} : { provider: args.provider },
++          ...args.model === undefined ? {} : { model: args.model },
++          ...args.reasoning_effort === undefined ? {} : { reasoning_effort: args.reasoning_effort },
++        }
++        const parentOptions = parentAgentOptionsForDelegation(agent)
++        const agentOptions = requestedAgentOptions(parentOptions, undefined, modelRequest, selectionEnabled)
++        assertAllowedModelSelection(policy, parentOptions, agentOptions, modelRequest)
++        const transport = context === 'fork' ? config.forkProvider : config.freshProvider
++        if (hasDelegationModelRequest(modelRequest)) {
++          const llm = ctx.get('llm')
++          if (llm === undefined) throw new Error('cannot resolve the selected child LLM route because the `llm` service is unavailable')
++          const provider = ctx.subagents.getProvider(transport)
++          if (provider === undefined || !provider.capabilities.agentOptions) throw new Error(`subagent provider "${transport}" does not support child model selection`)
++          await preflightChildLlmRoute(llm, parentOptions, agentOptions, exec.signal)
++          if (ctx.subagents.getProvider(transport) !== provider) throw new Error(`subagent provider "${transport}" changed while resolving the child LLM route; retry the delegation`)
++        }
++        exec.signal.throwIfAborted()
+         const result = await ctx.agentTeams.spawnTeammate(agent, {
+           name: args.name,
+           description: args.description,
+           prompt: [{ type: 'text', text: args.prompt }],
+           context,
+-          provider: context === 'fork' ? config.forkProvider : config.freshProvider,
++          provider: transport,
++          ...agentOptions === undefined ? {} : { agentOptions },
+           signal: exec.signal,
+         })
+         return { member: modelMember(result.member) }
+@@ -409,10 +486,15 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
+ 
+ /** Install Team tools in every live or subsequently published Team member scope. */
+ export function apply(ctx: Context, config: Config = {}): void {
+-  const resolved: Required<Config> = {
++  const resolved: ResolvedConfig = {
+     interrupt: config.interrupt ?? true,
+     freshProvider: config.freshProvider ?? 'spawn',
+     forkProvider: config.forkProvider ?? 'fork',
++    modelSelectionSettings: config.modelSelectionSettings ?? false,
++    ...config.models === undefined ? {} : { models: config.models },
++  }
++  if (resolved.modelSelectionSettings) {
++    ctx.effect(() => ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition))
+   }
+   const installed = new Map<Agent, () => void>()
+   const maybeInstall = (agent: Agent): void => {
+diff --git a/packages/experimental/tool-agent-team/tests/loader-composition.spec.ts b/packages/experimental/tool-agent-team/tests/loader-composition.spec.ts
+new file mode 100644
+index 0000000000..67777d2cf4
+--- /dev/null
++++ b/packages/experimental/tool-agent-team/tests/loader-composition.spec.ts
+@@ -0,0 +1,141 @@
++import { afterEach, expect, it, vi } from 'vitest'
++import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { pathToFileURL } from 'node:url'
++import { Context } from '@deepseek-ai/cordis'
++import Loader from '@deepseek-ai/cordis-plugin-loader'
++import Include from '@deepseek-ai/cordis-plugin-include'
++import AgentLoop from '@deepseek-ai/dsh-agent-loop'
++import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
++import { ToolCallId } from '@deepseek-ai/dsh-llm'
++import { SessionId } from '@deepseek-ai/dsh-session'
++import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
++import SubagentService from '@deepseek-ai/dsh-subagent'
++import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
++import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
++import ModelSelectionSettings from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
++import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
++import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
++import { mountWorkingDirectoryFixture } from '../../../subagent/subagent/tests/working-directory-fixture.ts'
++import TeamService from '../../agent-team/src/index.ts'
++import * as ToolTeam from '../src/index.ts'
++
++let ctx: Context | undefined
++let root: string | undefined
++
++afterEach(async () => {
++  await ctx?.fiber.dispose()
++  ctx = undefined
++  if (root !== undefined) rmSync(root, { recursive: true, force: true })
++  root = undefined
++})
++
++it.each([
++  { first: 'tools', disposeFirst: 'tools' },
++  { first: 'tools', disposeFirst: 'ordinary' },
++  { first: 'ordinary', disposeFirst: 'tools' },
++  { first: 'ordinary', disposeFirst: 'ordinary' },
++])('loads $first first and keeps discovery after unloading $disposeFirst', async ({ first, disposeFirst }) => {
++  root = mkdtempSync(join(tmpdir(), 'dsh-specialist-loader-'))
++  ctx = new Context()
++  await mountAgentLoopTestDependencies(ctx)
++  await mountWorkingDirectoryFixture(ctx)
++  ctx.baseUrl = pathToFileURL(root).href + '/'
++  await ctx.plugin(Loader)
++  ctx.loader.builtins.include = Include
++  const modules: Record<string, unknown> = {
++    persistence: JsonlSessionPersistence,
++    loop: AgentLoop,
++    subagents: SubagentService,
++    spawn: SubagentSpawn,
++    fork: SubagentFork,
++    settings: ModelSelectionSettings,
++    team: TeamService,
++    tools: ToolTeam,
++    ordinary: ToolSubagent,
++  }
++  for (const [name, plugin] of Object.entries(modules)) ctx.loader.builtins[name] = plugin
++  const configPath = join(root, 'cordis.yml')
++  writeFileSync(configPath, [
++    '- name: cordis:persistence',
++    `  config: ${JSON.stringify({ root: join(root, 'sessions') })}`,
++    '- name: cordis:loop',
++    '  config: { agents: [] }',
++    '- name: cordis:subagents',
++    '- name: cordis:spawn',
++    '- name: cordis:fork',
++    '- name: cordis:settings',
++    '  config:',
++    '    enabled: true',
++    '    allowedModels:',
++    '      - { provider: mock, model: mock }',
++    '      - { provider: mock, model: specialist }',
++    '- name: cordis:team',
++    ...(first === 'tools' ? [
++      '- name: cordis:tools',
++      '  config:',
++      '    modelSelectionSettings: true',
++      '    models:',
++      '      researcher: { provider: mock, model: specialist }',
++    ] : []),
++    '',
++  ].join('\n'))
++  await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
++  await ctx.loader.await()
++  const adapter = new MockAdapter(['hang', 'hang'])
++  ctx.llm.registerAdapter(['mock'], adapter)
++  const lead = await ctx.agentLoop.create(SessionId('loader-specialist-lead'), { provider: 'mock', model: 'mock' })
++  const ordinaryFiber = lead.ctx.plugin(ToolSubagent, { provider: 'spawn', maxDepth: 2, modelSelectionSettings: true })
++  await ordinaryFiber
++  if (first === 'ordinary') {
++    await ctx.loader.create({ name: 'cordis:tools', config: {
++      modelSelectionSettings: true,
++      models: { researcher: { provider: 'mock', model: 'specialist' } },
++    } })
++    await ctx.loader.await()
++  }
++  expect(ctx.tools.get('subagent', lead)).toBeDefined()
++  expect(ctx.tools.get('spawn_teammate', lead)).toBeDefined()
++  for (const context of ['fresh', 'fork']) {
++    const result = await ctx.tools.execute({
++      callId: ToolCallId(`loader-${context}`), name: 'spawn_teammate', agent: lead,
++      arguments: { name: `research-${context}`, description: 'Research', prompt: 'Research this task', specialist: 'researcher', context },
++      signal: new AbortController().signal,
++    })
++    expect(result.isError).toBe(false)
++    const member = ctx.agentTeams.listMembers(lead).find(member => member.name === `research-${context}`)
++    expect(member?.provider).toBe(context === 'fresh' ? 'spawn' : 'fork')
++    await vi.waitFor(() => expect(ctx!.agents.get(member!.id)?.options.model).toBe('specialist'))
++    await vi.waitFor(() => {
++      const request = adapter.requests.find(request => request.sessionId === member!.id)
++      expect(request).toMatchObject({ provider: 'mock', model: 'specialist' })
++    })
++  }
++  const discovery = await ctx.tools.execute({
++    callId: ToolCallId('loader-discovery'), name: 'list_subagent_models', agent: lead,
++    arguments: {}, signal: new AbortController().signal,
++  })
++  expect(discovery.isError).toBe(false)
++  const entry = (name: string) => [...ctx!.loader.entries()].find(entry => entry.options.name === `cordis:${name}`)!
++  const dispose = (name: string) => name === 'ordinary' ? ordinaryFiber.dispose() : entry(name).fiber!.dispose()
++  await dispose(disposeFirst)
++  expect(ctx.tools.get('spawn_teammate', lead) === undefined).toBe(disposeFirst === 'tools')
++  expect(ctx.tools.get('subagent', lead) === undefined).toBe(disposeFirst === 'ordinary')
++  const remainingDiscovery = await ctx.tools.execute({
++    callId: ToolCallId('loader-remaining-discovery'), name: 'list_subagent_models', agent: lead,
++    arguments: {}, signal: new AbortController().signal,
++  })
++  expect(remainingDiscovery.isError, JSON.stringify(remainingDiscovery.content)).toBe(false)
++  expect(remainingDiscovery.content).toMatchInlineSnapshot(`
++    [
++      {
++        "text": "mock — mock",
++        "type": "text",
++      },
++    ]
++  `)
++  await dispose(disposeFirst === 'tools' ? 'ordinary' : 'tools')
++  expect(ctx.tools.get('list_subagent_models', lead)).toBeUndefined()
++  expect(ctx.tools.get('subagent', lead)).toBeUndefined()
++})
+diff --git a/packages/experimental/tool-agent-team/tests/tool-team.spec.ts b/packages/experimental/tool-agent-team/tests/tool-team.spec.ts
+index 3715748b7b..e6878cf3ad 100644
+--- a/packages/experimental/tool-agent-team/tests/tool-team.spec.ts
++++ b/packages/experimental/tool-agent-team/tests/tool-team.spec.ts
+@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
+ import type { Agent } from '@deepseek-ai/dsh-agent'
+ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+-import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
++import { ToolCallId, ReasoningEffortId, createUserMessage } from '@deepseek-ai/dsh-llm'
+ import { scopeOf } from '@deepseek-ai/dsh-scope'
+ import { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+@@ -24,6 +24,7 @@ import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent
+ import { mountWorkingDirectoryFixture } from '../../../subagent/subagent/tests/working-directory-fixture.ts'
+ import TeamService from '../../agent-team/src/index.ts'
+ import * as toolTeam from '../src/index.ts'
++import ModelSelectionSettings from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+ 
+ function serializeRequest(request: GenerateOptions) {
+   const connection = resolveAdapterOptions({ models: [{ id: request.model, systemPromptUpdate: 'in-history' }] })
+@@ -69,7 +70,7 @@ afterEach(async () => {
+   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+ })
+ 
+-async function setup(script: ConstructorParameters<typeof MockAdapter>[0], legacyControl = false) {
++async function setup(script: ConstructorParameters<typeof MockAdapter>[0], legacyControl = false, config: toolTeam.Config = {}) {
+   const ctx = new Context()
+   contexts.add(ctx)
+   await mountAgentLoopTestDependencies(ctx)
+@@ -84,7 +85,13 @@ async function setup(script: ConstructorParameters<typeof MockAdapter>[0], legac
+   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
+   await ctx.plugin(SubagentFork, { providerName: 'fork' })
+   await ctx.plugin(TeamService)
+-  const fiber = await ctx.plugin(toolTeam)
++  if (config.modelSelectionSettings) {
++    await ctx.plugin(ModelSelectionSettings, {
++      enabled: true,
++      allowedModels: [{ provider: 'mock', model: 'mock' }, { provider: 'mock', model: 'specialist' }, { provider: 'missing', model: 'missing' }],
++    })
++  }
++  const fiber = await ctx.plugin(toolTeam, config)
+   const adapter = new MockAdapter(script)
+   ctx.llm.registerAdapter(['mock'], adapter)
+   const lead = await ctx.agentLoop.create(SessionId('tool-team-lead'), { provider: 'mock', model: 'mock' })
+@@ -141,6 +148,118 @@ async function waitNoAgent(ctx: Context, id: SessionId): Promise<void> {
+   await vi.waitFor(() => { expect(ctx.agents.get(id)).toBeUndefined() }, { timeout: 5_000 })
+ }
+ 
++describe('specialist teammate model selection', () => {
++  it.each(['designer', 'researcher', 'engineer', 'architect', 'verifier'] as const)('routes %s using its configured preference', async (specialist) => {
++    const { ctx, lead } = await setup(['hang'], false, {
++      modelSelectionSettings: true,
++      models: { [specialist]: { provider: 'mock', model: 'specialist' } },
++    })
++    const result = await execute(ctx, lead, 'spawn_teammate', { name: specialist, description: specialist, prompt: 'work', specialist })
++    expect(result.isError).toBe(false)
++    const childId = spawnedChildId(ctx, lead, result)
++    await vi.waitFor(() => expect(ctx.agents.get(childId)?.options.model).toBe('specialist'))
++    expect(ctx.tools.get('list_subagent_models', lead)).toBeDefined()
++  })
++
++  it.each(['fresh', 'fork'] as const)('honors an explicit route over the preference with %s context', async (context) => {
++    const { ctx, lead } = await setup(['hang'], false, {
++      modelSelectionSettings: true,
++      models: { engineer: { provider: 'mock', model: 'specialist', reasoningEffort: 'invalid' } },
++    })
++    const result = await execute(ctx, lead, 'spawn_teammate', {
++      name: 'engineer', description: 'implement', prompt: 'work', specialist: 'engineer', context,
++      provider: 'mock', model: 'mock',
++    })
++    expect(result.isError).toBe(false)
++    const childId = spawnedChildId(ctx, lead, result)
++    await vi.waitFor(() => expect(ctx.agents.get(childId)?.options.model).toBe('mock'))
++    expect(ctx.agentTeams.listMembers(lead).find(member => member.id === childId)?.provider).toBe(context === 'fresh' ? 'spawn' : 'fork')
++  })
++
++  it.each([
++    { provider: 'mock', model: 'disallowed' },
++    { provider: 'missing', model: 'missing' },
++    { provider: 'mock', model: 'mock', reasoning_effort: 'invalid' },
++    { provider: 'mock' },
++  ])('rejects invalid selection before reserving a name: %j', async (route) => {
++    const { ctx, lead } = await setup([], false, { modelSelectionSettings: true })
++    const spawn = vi.spyOn(ctx.agentTeams, 'spawnTeammate')
++    const result = await execute(ctx, lead, 'spawn_teammate', { name: 'available', description: 'work', prompt: 'work', ...route })
++    expect(result.isError).toBe(true)
++    expect(spawn).not.toHaveBeenCalled()
++    expect(ctx.agentTeams.listMembers(lead).map(member => member.name)).toEqual(['lead'])
++  })
++
++  it.each([['mock', 'high'], ['specialist', undefined]] as const)('inherits compatible effort for model %s', async (model, expectedEffort) => {
++    const { ctx, adapter } = await setup(['hang'], false, { modelSelectionSettings: true })
++    vi.spyOn(adapter, 'resolveModel').mockImplementation(async (provider, requestedModel) => ({
++      provider, id: requestedModel, name: requestedModel,
++      reasoning: { efforts: [{ id: ReasoningEffortId('high'), name: 'High' }] },
++    }))
++    const parent = await ctx.agentLoop.create(SessionId(`effort-parent-${model}`), {
++      provider: 'mock', model: 'mock', reasoningEffort: ReasoningEffortId('high'),
++    })
++    const result = await execute(ctx, parent, 'spawn_teammate', {
++      name: 'worker', description: 'work', prompt: 'work', provider: 'mock', model,
++    })
++    expect(result.isError).toBe(false)
++    const childId = spawnedChildId(ctx, parent, result)
++    await vi.waitFor(() => expect(ctx.agents.get(childId)).toBeDefined())
++    expect(ctx.agents.get(childId)?.options.reasoningEffort).toBe(expectedEffort)
++  })
++
++  it('rejects adapter model lookup failure before spawning', async () => {
++    const { ctx, lead, adapter } = await setup([], false, { modelSelectionSettings: true })
++    vi.spyOn(adapter, 'resolveModel').mockRejectedValue(new Error('exact model is unavailable'))
++    const spawn = vi.spyOn(ctx.agentTeams, 'spawnTeammate')
++    const denied = await execute(ctx, lead, 'spawn_teammate', {
++      name: 'unused', description: 'work', prompt: 'work', provider: 'mock', model: 'specialist',
++    })
++    expect(denied.isError).toBe(true)
++    expect(text(denied)).toContain('exact model is unavailable')
++    expect(spawn).not.toHaveBeenCalled()
++  })
++
++  it('rejects a disallowed specialist preference before reserving its name', async () => {
++    const { ctx, lead } = await setup([], false, {
++      modelSelectionSettings: true,
++      models: { verifier: { provider: 'mock', model: 'disallowed' } },
++    })
++    const spawn = vi.spyOn(ctx.agentTeams, 'spawnTeammate')
++    const denied = await execute(ctx, lead, 'spawn_teammate', { name: 'unused', description: 'work', prompt: 'work', specialist: 'verifier' })
++    expect(denied.isError).toBe(true)
++    expect(text(denied)).toContain('not allowed')
++    expect(spawn).not.toHaveBeenCalled()
++    expect(ctx.agentTeams.listMembers(lead)).toHaveLength(1)
++  })
++
++  it('removes model discovery on plugin disposal and registers it only on the Lead', async () => {
++    const { ctx, lead, fiber } = await setup(['hang'], false, { modelSelectionSettings: true })
++    const result = await execute(ctx, lead, 'spawn_teammate', { name: 'worker', description: 'work', prompt: 'work' })
++    const childId = spawnedChildId(ctx, lead, result)
++    const child = await vi.waitFor(() => {
++      const current = ctx.agents.get(childId)
++      expect(current).toBeDefined()
++      return current!
++    })
++    expect(ctx.tools.get('list_subagent_models', lead)).toBeDefined()
++    expect(ctx.tools.get('list_subagent_models', child)).toBeUndefined()
++    await fiber.dispose()
++    expect(ctx.tools.get('list_subagent_models', lead)).toBeUndefined()
++  })
++
++  it('keeps recorded policy after Host settings change and inherits when preference is absent', async () => {
++    const { ctx, lead } = await setup(['hang'], false, { modelSelectionSettings: true })
++    vi.spyOn(ctx.subagentModelSelection, 'current').mockReturnValue({ enabled: true, allowedModels: [{ provider: 'mock', model: 'disallowed' }] })
++    const denied = await execute(ctx, lead, 'spawn_teammate', { name: 'unused', description: 'work', prompt: 'work', provider: 'mock', model: 'disallowed' })
++    expect(denied.isError).toBe(true)
++    const inherited = await execute(ctx, lead, 'spawn_teammate', { name: 'inherited', description: 'work', prompt: 'work', specialist: 'verifier' })
++    expect(inherited.isError).toBe(false)
++    const childId = spawnedChildId(ctx, lead, inherited)
++    await vi.waitFor(() => expect(ctx.agents.get(childId)?.options.model).toBe('mock'))
++  })
++})
++
+ describe('dsh-tool-team', () => {
+   it.each(['running', 'inactive', 'provisioning', 'failed'] as const)(
+     'projects %s members consistently in creation, listing, and schemas', async (status) => {
+@@ -762,7 +881,7 @@ describe('dsh-tool-team', () => {
+     expect(text(result)).toContain('unknown tool "list_agents"')
+     expect('default' in toolTeam).toBe(false)
+     expect(toolTeam.name).toBe('tool-agent-team')
+-    expect(toolTeam.inject).toEqual(['agents', 'agentTeams', 'tools', 'systemPrompt'])
++    expect(toolTeam.inject).toEqual(['agents', 'agentTeams', 'tools', 'systemPrompt', 'subagents', 'sessionProjections'])
+   })
+ 
+   it('uses configured fresh and fork provider names', async () => {
+diff --git a/packages/experimental/tool-agent-team/tsconfig.json b/packages/experimental/tool-agent-team/tsconfig.json
+index d4f77f93e5..8cf6a20f46 100644
+--- a/packages/experimental/tool-agent-team/tsconfig.json
++++ b/packages/experimental/tool-agent-team/tsconfig.json
+@@ -12,6 +12,10 @@
+     { "path": "../../core/agent" },
+     { "path": "../../core/scope" },
+     { "path": "../../core/session" },
++    { "path": "../../llm/llm" },
++    { "path": "../../session/session-projection" },
++    { "path": "../../subagent/subagent" },
++    { "path": "../../subagent/tool-subagent" },
+     { "path": "../../core/system-prompt" },
+     { "path": "../../core/tools" },
+     { "path": "../agent-team" }
+diff --git a/packages/subagent/tool-subagent/README.i18n.yaml b/packages/subagent/tool-subagent/README.i18n.yaml
+index 48a9af01ed..dcbaa30dca 100644
+--- a/packages/subagent/tool-subagent/README.i18n.yaml
++++ b/packages/subagent/tool-subagent/README.i18n.yaml
+@@ -27,14 +27,14 @@
+   en: 1950ef92bab0f46e
+   zh: 593f5f64ed9b5631
+ /deepseek-ai-dsh-tool-subagent/use-this-package/selecting-a-child-llm:
+-  en: 0d37e3b3957515e4
+-  zh: ea1a94b2f29e7d9a
++  en: d0c8c29bad16478b
++  zh: 982735d82f03cffd
+ /deepseek-ai-dsh-tool-subagent/understand-the-implementation:
+   en: 6ce5f749256a7e6c
+   zh: a4f2adb04a70d9cf
+ /deepseek-ai-dsh-tool-subagent/understand-the-implementation/design-concept:
+-  en: e9df1e3d504a3625
+-  zh: 4eca7bb1bc6def62
++  en: 9ae7492f3540b49b
++  zh: bb28647fde83eec7
+ /deepseek-ai-dsh-tool-subagent/understand-the-implementation/activation-ownership:
+   en: ef692c4d17290920
+   zh: b1d0d3dab011e2cd
+diff --git a/packages/subagent/tool-subagent/README.md b/packages/subagent/tool-subagent/README.md
+index dbf644106d..f1682ee8db 100644
+--- a/packages/subagent/tool-subagent/README.md
++++ b/packages/subagent/tool-subagent/README.md
+@@ -77,6 +77,8 @@ Set `modelSelectionSettings: true` to sample the Host's `subagent-model-selectio
+ 
+ A call supplies `provider` and `model` together, or supplies only an effort when configured, parent, or provider-owned defaults provide the route. Static `provider.agentRouteDefaults`, when present, form the provider/model baseline; tool configuration and model fields overlay it before route-aware effort merging and exact-route preflight. Providers without these defaults use compatible values from the parent's latest logged request, then the parent's creation options before its first request, while retaining the configured `maxTokens`. Changing the route without an explicit effort clears the inherited route-owned effort, so the selected model resolves its default. The live LLM adapter validates the effective route before child creation. Catalog membership remains advisory, so a model can use an unlisted id when its adapter accepts it.
+ 
++The `./model-selection`, `./model-selection-state`, and `./list-models` exports share the exact-route validation, durable Session policy, and discovery registration with other delegation tools. `selectSubagentModelSelection` initializes or restores that policy; callers register `subagentModelSelectionProjectionDefinition` for their plugin lifetime. `registerListSubagentModels` returns a disposer so the registering scope owns cleanup.
++
+ -----
+ 
+ <a id="understand-the-implementation"></a>
+@@ -89,7 +91,7 @@ This section explains how the tool mirrors provider lifecycle and settles runs;
+ 
+ ### Design concept
+ 
+-One instance is one provider plus one tool name. The plugin mirrors provider lifecycle: it registers the tool when the named provider appears and disposes it when the provider leaves, so sibling load order and HMR replacement cannot strand a dangling tool. Direct Agent setup passes its unpublished Session explicitly and awaits installation before publication. A standing preset with model or preset selection receives each matching Agent through `agent/created`, validates preset references, selects any model policy from its Session, and awaits installation through its Context; installation failure rejects creation. A numeric `maxDepth` or configured LLM selection the provider cannot enforce fails the mount instead of the first delegation. At most one instance in a tool scope may own model selection because `list_subagent_models` has a global name.
++One instance is one provider plus one tool name. The plugin mirrors provider lifecycle: it registers the tool when the named provider appears and disposes it when the provider leaves, so sibling load order and HMR replacement cannot strand a dangling tool. Direct Agent setup passes its unpublished Session explicitly and awaits installation before publication. A standing preset with model or preset selection receives each matching Agent through `agent/created`, validates preset references, selects any model policy from its Session, and awaits installation through its Context; installation failure rejects creation. A numeric `maxDepth` or configured LLM selection the provider cannot enforce fails the mount instead of the first delegation. Model-selection consumers in one tool scope share discovery; it remains available until the last consumer leaves. Unmounting a standing preset releases its Agent-owned installations.
+ 
+ ### Activation ownership
+ 
+diff --git a/packages/subagent/tool-subagent/README.zh.md b/packages/subagent/tool-subagent/README.zh.md
+index 448881996f..63107e158d 100644
+--- a/packages/subagent/tool-subagent/README.zh.md
++++ b/packages/subagent/tool-subagent/README.zh.md
+@@ -77,6 +77,8 @@ kind: "package-reference"
+ 
+ 一次调用需同时提供 `provider` 与 `model`；当配置值、父 agent 值或提供方持有的默认值能提供路由时，也可只提供推理等级。静态的 `provider.agentRouteDefaults` 在存在时构成提供方／模型基线；工具配置与模型字段会在路由相关强度合并和确切路由预检前覆盖它。没有这些默认值的提供方会使用父 agent 最新已记录请求中的兼容值，再使用父级首次请求前的创建选项，并保留配置的 `maxTokens`。更改路由但未显式提供推理等级时，会清除继承的路由自有等级，使所选模型解析自己的默认值。实时 LLM 适配器在创建子 agent 前校验有效路由。目录成员资格只提供建议，因此适配器接受时，模型可以使用未列出的 id。
+ 
++`./model-selection`、`./model-selection-state` 与 `./list-models` 导出供其他委派工具复用精确路由校验、持久 Session 授权与模型发现。`selectSubagentModelSelection` 初始化或恢复该授权；调用方在自身插件生命周期内注册 `subagentModelSelectionProjectionDefinition`。`registerListSubagentModels` 返回清理函数，由注册作用域负责释放。
++
+ -----
+ 
+ <a id="understand-the-implementation"></a>
+@@ -89,7 +91,7 @@ kind: "package-reference"
+ 
+ ### 设计理念
+ 
+-一个实例就是一个提供方加一个工具名称。插件镜像提供方生命周期：具名提供方出现时注册工具，提供方离开时释放工具，因此同级加载顺序与 HMR 替换不会让工具悬空。直接 Agent setup 显式传入尚未发布的 Session，并在发布前等待安装完成。启用模型选择或 preset 选择的常驻 preset 通过 `agent/created` 接收每个匹配 Agent，校验 preset 引用，从其 Session 选择适用的模型策略，并等待通过其 Context 发起的安装；安装失败会拒绝创建。提供方无法执行的数值型 `maxDepth` 或已配置 LLM 选择会在挂载时失败，而不是在首次委派时失败。每个工具作用域内最多一个实例可以拥有模型选择，因为 `list_subagent_models` 使用全局名称。
++一个实例就是一个提供方加一个工具名称。插件镜像提供方生命周期：具名提供方出现时注册工具，提供方离开时释放工具，因此同级加载顺序与 HMR 替换不会让工具悬空。直接 Agent setup 显式传入尚未发布的 Session，并在发布前等待安装完成。启用模型选择或 preset 选择的常驻 preset 通过 `agent/created` 接收每个匹配 Agent，校验 preset 引用，从其 Session 选择适用的模型策略，并等待通过其 Context 发起的安装；安装失败会拒绝创建。提供方无法执行的数值型 `maxDepth` 或已配置 LLM 选择会在挂载时失败，而不是在首次委派时失败。同一工具作用域的模型选择消费者共享发现工具，直到最后一个消费者卸载才移除。卸载常驻 preset 时也会释放其 Agent 作用域安装。
+ 
+ ### Activation 所有权
+ 
+diff --git a/packages/subagent/tool-subagent/package.json b/packages/subagent/tool-subagent/package.json
+index ab032339be..e9b2f91f79 100644
+--- a/packages/subagent/tool-subagent/package.json
++++ b/packages/subagent/tool-subagent/package.json
+@@ -18,6 +18,18 @@
+       "types": "./lib/types/index.d.ts",
+       "default": "./lib/index.js"
+     },
++    "./model-selection": {
++      "types": "./lib/types/model-selection.d.ts",
++      "default": "./lib/model-selection.js"
++    },
++    "./model-selection-state": {
++      "types": "./lib/types/model-selection-state.d.ts",
++      "default": "./lib/model-selection-state.js"
++    },
++    "./list-models": {
++      "types": "./lib/types/list-models.d.ts",
++      "default": "./lib/list-models.js"
++    },
+     "./model-selection-settings": {
+       "types": "./lib/types/model-selection-settings.d.ts",
+       "default": "./lib/model-selection-settings.js"
+@@ -32,6 +44,9 @@
+     "locale/model-selection-settings/*.json",
+     "lib/index.js",
+     "lib/model-selection-settings.js",
++    "lib/model-selection.js",
++    "lib/model-selection-state.js",
++    "lib/list-models.js",
+     "lib/types/**/*.d.ts"
+   ],
+   "license": "MIT",
+diff --git a/packages/subagent/tool-subagent/src/index.ts b/packages/subagent/tool-subagent/src/index.ts
+index 7346edb57f..01915c7fdd 100644
+--- a/packages/subagent/tool-subagent/src/index.ts
++++ b/packages/subagent/tool-subagent/src/index.ts
+@@ -6,7 +6,7 @@
+  * @module @deepseek-ai/dsh-tool-subagent
+  */
+ 
+-import type { Context } from '@deepseek-ai/cordis'
++import type { FiberState, Context } from '@deepseek-ai/cordis'
+ import z from '@deepseek-ai/schemastery'
+ import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
+ import { defineTool } from '@deepseek-ai/dsh-tools'
+@@ -14,7 +14,6 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+ import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
+ import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+-import { SessionSeq } from '@deepseek-ai/dsh-session'
+ import type { Session } from '@deepseek-ai/dsh-session'
+ import {
+   assertSubagentMaxDepth,
+@@ -34,11 +33,13 @@ import { registerListSubagentModels } from './list-models.ts'
+ import { SubagentPresetSelection, type PresetSelectionConfig, type PresetSelectionRequest } from './preset-selection.ts'
+ import type {} from './model-selection-settings.ts'
+ import {
+-  recordSubagentModelSelection,
++  selectSubagentModelSelection,
+   subagentModelSelectionProjectionDefinition,
+-  subagentModelSelectionPolicy,
+ } from './model-selection-state.ts'
+ 
++/** Runtime mirror: FiberState is a cross-package const enum. */
++const FIBER_UNLOADING: FiberState.UNLOADING = 5
++
+ export const name = 'tool-subagent'
+ export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections']
+ 
+@@ -410,35 +411,8 @@ export async function apply(ctx: Context, config: Config, session?: Session): Pr
+       + '@deepseek-ai/dsh-tool-subagent/model-selection-settings in the Host scope',
+     )
+   }
+-  const selectForSession = (target: Session): ModelSelectionPolicy | undefined => {
+-    if (!modelSelectionCapable || settings === undefined) return undefined
+-    const freshSession = target.firstLiveSeq === 0
+-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
+-      && target.eventAt(SessionSeq(0))?.type !== 'session/end-seed'
+-    let allowedModels = subagentModelSelectionPolicy(ctx.sessionProjections, target)
+-    if (allowedModels === undefined) {
+-      const parentId = target.header.origin === 'subagent'
+-        ? target.header.parentSession
+-        : undefined
+-      if (parentId !== undefined) {
+-        const sessions = ctx.get('sessions')
+-        if (sessions === undefined) {
+-          throw new Error('tool-subagent: child model-selection inheritance requires the Session registry')
+-        }
+-        const parent = sessions.get(parentId)
+-        allowedModels = parent === undefined
+-          ? undefined
+-          : subagentModelSelectionPolicy(ctx.sessionProjections, parent)
+-      } else if (freshSession) {
+-        const current = settings.current()
+-        allowedModels = current.enabled ? current.allowedModels : undefined
+-      }
+-    }
+-    if (allowedModels !== undefined) {
+-      recordSubagentModelSelection(ctx.sessionProjections, target, allowedModels)
+-    }
+-    return allowedModels === undefined ? undefined : { routes: allowedModels }
+-  }
++  const selectForSession = (target: Session): ModelSelectionPolicy | undefined =>
++    selectSubagentModelSelection(ctx, target, modelSelectionCapable)
+ 
+   if (session !== undefined) {
+     install(ctx, selectForSession(session))
+@@ -451,11 +425,13 @@ export async function apply(ctx: Context, config: Config, session?: Session): Pr
+   const agents = ctx.get('agents')
+   /* v8 ignore next -- shipped preset compositions always include the Agent registry. */
+   if (agents === undefined) throw new Error('tool-subagent: standing `modelSelectionSettings` requires the Agent registry')
+-  const scopedInstalls = new WeakMap<Agent, ReturnType<Context['inject']>>()
++  const scopedInstalls = new Map<Agent, ReturnType<Context['inject']>>()
+   const installing = new WeakSet<Agent>()
++  let stopped = false
+   const belongsToComposition = (candidate: Agent): boolean =>
+     scopeChainOf(scopeOf(candidate.ctx)).includes(compositionScope)
+   const installScoped = (candidate: Agent): ReturnType<Context['inject']> | undefined => {
++    if (stopped || ctx.fiber.state === FIBER_UNLOADING || ctx.fiber.uid === null) return
+     const existing = scopedInstalls.get(candidate)
+     if (existing !== undefined) return existing
+     if (installing.has(candidate)) return
+@@ -501,5 +477,11 @@ export async function apply(ctx: Context, config: Config, session?: Session): Pr
+   // set and emits `tools/change`; reconcile the Agent-owned override with the
+   // new ancestry. Other registry changes are idempotent no-ops here.
+   ctx.on('tools/change', reconcileComposedAgents)
++  ctx.effect(() => async () => {
++    stopped = true
++    const fibers = [...scopedInstalls.values()]
++    scopedInstalls.clear()
++    await Promise.all(fibers.map(fiber => fiber.dispose()))
++  })
+   reconcileComposedAgents()
+ }
+diff --git a/packages/subagent/tool-subagent/src/list-models.ts b/packages/subagent/tool-subagent/src/list-models.ts
+index a1265934d3..fcf3956788 100644
+--- a/packages/subagent/tool-subagent/src/list-models.ts
++++ b/packages/subagent/tool-subagent/src/list-models.ts
+@@ -1,11 +1,15 @@
+ /** Model-facing discovery of LLM routes available to child Agents. */
+ 
+-import type { Context } from '@deepseek-ai/cordis'
++import type { FiberState, Context } from '@deepseek-ai/cordis'
++import { scopeOf } from '@deepseek-ai/dsh-scope'
+ import type LlmRuntime from '@deepseek-ai/dsh-llm'
+ import type { LlmProviderInfo } from '@deepseek-ai/dsh-llm'
+ import { defineTool } from '@deepseek-ai/dsh-tools'
+ import type { ModelSelectionPolicy } from './model-selection.ts'
+ 
++/** Runtime mirror: FiberState is a cross-package const enum. */
++const FIBER_UNLOADING: FiberState.UNLOADING = 5
++
+ interface ListSubagentModelsRequest {
+   readonly provider?: string
+   readonly model?: string
+@@ -79,12 +83,13 @@ async function listSubagentModels(
+ }
+ 
+ /**
+- * Register `list_subagent_models` for one owning delegation-tool instance.
+- * @param ctx - Context whose tool registry owns the fixed discovery definition.
++ * Keep discovery available while this delegation-tool instance is mounted.
++ * @param ctx - Context whose tool registry owns the discovery definition.
+  * @param policy - Route policy captured for this Session.
++ * @returns Disposer that releases this consumer and any registration it owns.
+  */
+-export function registerListSubagentModels(ctx: Context, policy: ModelSelectionPolicy): void {
+-  ctx.tools.register(defineTool({
++export function registerListSubagentModels(ctx: Context, policy: ModelSelectionPolicy): () => void {
++  const definition = defineTool({
+     name: 'list_subagent_models',
+     description:
+       'Discover LLM routes for subagents without changing the current Agent. Call with no arguments to list '
+@@ -109,5 +114,27 @@ export function registerListSubagentModels(ctx: Context, policy: ModelSelectionP
+     execute(args, exec) {
+       return listSubagentModels(ctx, policy, args, exec.signal)
+     },
+-  }))
++  })
++  return ctx.effect(() => {
++    let disposed = false
++    let mounting = false
++    let unregister: (() => void) | undefined
++    const reconcile = (): void => {
++      if (disposed || mounting || ctx.fiber.state === FIBER_UNLOADING || ctx.fiber.uid === null
++        || ctx.tools.get(definition.name, scopeOf(ctx)) !== undefined) return
++      mounting = true
++      try {
++        unregister = ctx.tools.register(definition)
++      } finally {
++        mounting = false
++      }
++    }
++    const stopWatching = ctx.on('tools/change', reconcile)
++    reconcile()
++    return () => {
++      disposed = true
++      stopWatching()
++      return unregister?.()
++    }
++  })
+ }
+diff --git a/packages/subagent/tool-subagent/src/model-selection-state.ts b/packages/subagent/tool-subagent/src/model-selection-state.ts
+index d3b04b828b..9bf0d36540 100644
+--- a/packages/subagent/tool-subagent/src/model-selection-state.ts
++++ b/packages/subagent/tool-subagent/src/model-selection-state.ts
+@@ -1,7 +1,11 @@
+ /** Durable per-session state for the user-controlled model-selection opt-in. */
+ 
+ import { z as zod } from 'zod'
++import type { Context } from '@deepseek-ai/cordis'
++import { SessionSeq } from '@deepseek-ai/dsh-session'
+ import type { Session } from '@deepseek-ai/dsh-session'
++import type {} from './model-selection-settings.ts'
++import type { ModelSelectionPolicy } from './model-selection.ts'
+ import type SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+ import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+ import { assertAllowedModelRoutes, type AllowedModelRoute } from './model-selection.ts'
+@@ -79,3 +83,42 @@ export function recordSubagentModelSelection(
+     allowedModels: allowedModels.map(route => ({ ...route })),
+   })
+ }
++
++/**
++ * Resolve and record the immutable child-model policy for a Session.
++ * Existing Sessions without a saved policy remain disabled; fresh roots sample
++ * Host settings and child Sessions inherit the parent's recorded policy.
++ * @param ctx - Context carrying projections and optional Host settings and Sessions.
++ * @param session - Session whose selection authority is initialized or restored.
++ * @param enabled - Whether the consuming tool supports model selection.
++ * @returns Recorded authority, or undefined when selection is disabled.
++ */
++export function selectSubagentModelSelection(
++  ctx: Context,
++  session: Session,
++  enabled: boolean,
++): ModelSelectionPolicy | undefined {
++  if (!enabled) return undefined
++  const settings = ctx.get('subagentModelSelection')
++  if (settings === undefined) {
++    throw new Error('child model selection requires the subagent-model-selection-settings Host service')
++  }
++  const freshSession = session.firstLiveSeq === 0
++    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
++    && session.eventAt(SessionSeq(0))?.type !== 'session/end-seed'
++  let allowedModels = subagentModelSelectionPolicy(ctx.sessionProjections, session)
++  if (allowedModels === undefined) {
++    const parentId = session.header.origin === 'subagent' ? session.header.parentSession : undefined
++    if (parentId !== undefined) {
++      const sessions = ctx.get('sessions')
++      if (sessions === undefined) throw new Error('tool-subagent: child model-selection inheritance requires the Session registry')
++      const parent = sessions.get(parentId)
++      allowedModels = parent === undefined ? undefined : subagentModelSelectionPolicy(ctx.sessionProjections, parent)
++    } else if (freshSession) {
++      const current = settings.current()
++      allowedModels = current.enabled ? current.allowedModels : undefined
++    }
++  }
++  if (allowedModels !== undefined) recordSubagentModelSelection(ctx.sessionProjections, session, allowedModels)
++  return allowedModels === undefined ? undefined : { routes: allowedModels }
++}
+diff --git a/packages/subagent/tool-subagent/tests/list-models.spec.ts b/packages/subagent/tool-subagent/tests/list-models.spec.ts
+index d5d4b544b7..b3996f42f7 100644
+--- a/packages/subagent/tool-subagent/tests/list-models.spec.ts
++++ b/packages/subagent/tool-subagent/tests/list-models.spec.ts
+@@ -124,11 +124,21 @@ describe('list_subagent_models', () => {
+     expect(text(result)).toContain('`llm` service is unavailable')
+   })
+ 
+-  it('rejects two discovery-owning instances in one tool scope', async () => {
+-    const ctx = await setupListTool()
+-    expect(() => {
+-      registerListSubagentModels(ctx, { routes: [{ provider: 'alpha', model: 'fast' }] })
+-    }).toThrow('tool "list_subagent_models" is already registered')
++  it.each([0, 1])('shares discovery until both consumers leave, disposing %s first', async (first) => {
++    const ctx = new Context()
++    await ctx.plugin(SystemPrompt)
++    await ctx.plugin(ToolRuntime)
++    const policy = { routes: [{ provider: 'alpha', model: 'fast' }] }
++    const dispose = [registerListSubagentModels(ctx, policy), registerListSubagentModels(ctx, policy)]
++    try {
++      expect(ctx.tools.get('list_subagent_models')).toBeDefined()
++      dispose[first]!()
++      expect(ctx.tools.get('list_subagent_models')).toBeDefined()
++      dispose[1 - first]!()
++      expect(ctx.tools.get('list_subagent_models')).toBeUndefined()
++    } finally {
++      await ctx.fiber.dispose()
++    }
+   })
+ 
+   it('lists registered providers and follows live registration changes', async () => {
+diff --git a/packages/subagent/tool-subagent/tsdown.config.ts b/packages/subagent/tool-subagent/tsdown.config.ts
+index 4a467f2c5e..05df0b9b84 100644
+--- a/packages/subagent/tool-subagent/tsdown.config.ts
++++ b/packages/subagent/tool-subagent/tsdown.config.ts
+@@ -14,5 +14,8 @@ const entry = (path: string) => ({
+ /** Build self-contained Loader entries so the package needs no private chunks. */
+ export default defineConfig([
+   entry('lib/types/index.js'),
++  entry('lib/types/model-selection.js'),
++  entry('lib/types/model-selection-state.js'),
++  entry('lib/types/list-models.js'),
+   entry('lib/types/model-selection-settings.js'),
+ ])
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index d6df9aae42..584bc66a95 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -9224,6 +9224,12 @@ importers:
+       '@deepseek-ai/cordis':
+         specifier: workspace:~
+         version: link:../../../vendor/cordis
++      '@deepseek-ai/cordis-plugin-include':
++        specifier: workspace:~
++        version: link:../../../vendor/include
++      '@deepseek-ai/cordis-plugin-loader':
++        specifier: workspace:~
++        version: link:../../../vendor/loader
+       '@deepseek-ai/dsh-agent':
+         specifier: workspace:*
+         version: link:../../core/agent
+@@ -9269,6 +9275,9 @@ importers:
+       '@deepseek-ai/dsh-system-prompt':
+         specifier: workspace:*
+         version: link:../../core/system-prompt
++      '@deepseek-ai/dsh-tool-subagent':
++        specifier: workspace:*
++        version: link:../../subagent/tool-subagent
+       '@deepseek-ai/dsh-tool-subagent-control':
+         specifier: workspace:*
+         version: link:../../subagent/tool-subagent-control
+diff --git a/scripts/build-specialist-team-local.ts b/scripts/build-specialist-team-local.ts
+new file mode 100644
+index 0000000000..f3d0fe9978
+--- /dev/null
++++ b/scripts/build-specialist-team-local.ts
+@@ -0,0 +1,48 @@
++/** Build same-release Team backports while sharing every runtime-owned dependency. */
++import { mkdirSync, readFileSync, realpathSync, symlinkSync, existsSync, writeFileSync } from 'node:fs'
++import { resolve, join } from 'node:path'
++import { parseArgs } from 'node:util'
++import { build } from 'tsdown'
++
++const root = resolve(import.meta.dirname, '..')
++const { values } = parseArgs({ options: { runtime: { type: 'string' }, out: { type: 'string' } } })
++if (!values.runtime || !values.out) throw new Error('usage: node scripts/build-specialist-team-local.ts --runtime <installed-dsh-root> --out <local-plugin-directory>')
++const runtime = realpathSync(values.runtime)
++const outDir = resolve(values.out)
++const version = JSON.parse(readFileSync(join(root, 'packages/experimental/agent-team/package.json'), 'utf8')).version
++const installed = JSON.parse(readFileSync(join(runtime, 'node_modules/@deepseek-ai/dsh-experimental-agent-team/package.json'), 'utf8')).version
++if (installed !== version) throw new Error(`Team backport requires runtime ${version}; found ${installed}`)
++const modules = realpathSync(join(runtime, 'node_modules'))
++mkdirSync(outDir, { recursive: true })
++const link = join(outDir, 'node_modules')
++if (existsSync(link)) {
++  if (realpathSync(link) !== modules) throw new Error('output node_modules must resolve to the selected runtime')
++} else {
++  symlinkSync(modules, link, 'dir')
++}
++// Bundle the three new helper exports; older runtime package exports lack them.
++// Keep Cordis, LLM, projections, and all other peers owned by the installed runtime.
++const helpers = ['model-selection', 'model-selection-state', 'list-models']
++const helperImports = helpers.map(name => `@deepseek-ai/dsh-tool-subagent/${name}`)
++await build({
++  config: false,
++  cwd: root,
++  entry: {
++    'agent-team': join(root, 'packages/experimental/agent-team/src/index.ts'),
++    'tool-agent-team': join(root, 'packages/experimental/tool-agent-team/src/index.ts'),
++    'tool-subagent': join(root, 'packages/subagent/tool-subagent/src/index.ts'),
++  },
++  outDir,
++  platform: 'node',
++  target: 'es2024',
++  format: ['esm'],
++  dts: false,
++  clean: false,
++  deps: {
++    alwaysBundle: helperImports,
++    neverBundle: id => !id.startsWith('.') && !id.startsWith('/') && !helperImports.includes(id),
++  },
++  outExtensions: () => ({ js: '.mjs' }),
++})
++writeFileSync(join(outDir, 'build-info.json'), `${JSON.stringify({ version, source: root, runtime, helpers }, null, 2)}\n`)
++console.log(`Local Team modules: ${outDir}`)
+diff --git a/scripts/gen-tool-catalog.ts b/scripts/gen-tool-catalog.ts
+index c4ed48c185..f722a19a5d 100644
+--- a/scripts/gen-tool-catalog.ts
++++ b/scripts/gen-tool-catalog.ts
+@@ -576,9 +576,10 @@ const TOOL_PACKAGES: ToolPackage[] = [
+     pkg: '@deepseek-ai/dsh-experimental-tool-agent-team',
+     dir: 'tool-agent-team',
+     source: 'packages/experimental/tool-agent-team/src/index.ts',
+-    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.agentTeams', 'an exact live Team member Agent'],
++    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.agentTeams', 'ctx.subagents', 'ctx.sessionProjections', 'an exact live Team member Agent'],
+     writes: ['tool/call', 'team/member', 'team/task', 'agent/inbox/spliced', 'user/message on inbox claim', 'tool/result'],
+     async mount(ctx) {
++      await ctx.plugin(SubagentRuntime)
+       await ctx.plugin(AgentRegistry)
+       await ctx.plugin(SessionStore)
+       const session = ctx.sessions.create(SessionId('tool-catalog-team-lead'))
+diff --git a/tsconfig.base.json b/tsconfig.base.json
+index f083f9b35e..3fd51f4f13 100644
+--- a/tsconfig.base.json
++++ b/tsconfig.base.json
+@@ -200,6 +200,9 @@
+       "@deepseek-ai/dsh-tools/types": ["./packages/core/tools/src/types.ts"],
+       "@deepseek-ai/dsh-tool-subagent-control/list-agents": ["./packages/subagent/tool-subagent-control/src/list-agents.ts"],
+       "@deepseek-ai/dsh-tool-subagent/model-selection-settings": ["./packages/subagent/tool-subagent/src/model-selection-settings.ts"],
++      "@deepseek-ai/dsh-tool-subagent/model-selection": ["./packages/subagent/tool-subagent/src/model-selection.ts"],
++      "@deepseek-ai/dsh-tool-subagent/model-selection-state": ["./packages/subagent/tool-subagent/src/model-selection-state.ts"],
++      "@deepseek-ai/dsh-tool-subagent/list-models": ["./packages/subagent/tool-subagent/src/list-models.ts"],
+       "@deepseek-ai/dsh-user-approval/types": ["./packages/interaction/user-approval/src/types.ts"],
+       "@deepseek-ai/dsh-user-questions/types": ["./packages/interaction/user-questions/src/types.ts"],
+       "@deepseek-ai/dsh-agent/types": ["./packages/core/agent/src/types.ts"],

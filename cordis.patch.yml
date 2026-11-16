@@ -1,0 +1,25 @@
+- id: agent-team
+  disabled: true
+- id: tool-agent-team
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- insert:
+    - id: specialist-team-service
+      name: dsh-specialist-team/team
+      config:
+        maxMembers: 8
+        maxTasks: 256
+        maxMessageBytes: 65536
+        disposalTimeoutMs: 5000
+    - id: specialist-team-tools
+      name: dsh-specialist-team/tools
+      config:
+        interrupt: true
+        freshProvider: spawn
+        forkProvider: fork
+        modelSelectionSettings: true
+    - id: specialist-team
+      name: dsh-specialist-team
