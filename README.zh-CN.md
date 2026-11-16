@@ -2,40 +2,34 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-让 DSH 按需找专家，把每个人的工作说清楚。小任务由主代理直接完成；需要协作时，再指定专家的交付物、文件范围、可用工具和停止条件。
+小任务由主代理直接完成，复杂任务交给职责明确的专家。插件自动加载分工规则，限制每位专家能使用的工具，无需手动触发技能。
 
-插件自动加载分工规则，并在工具执行前检查派工权限，无需手动触发技能。
+基于 DeepSeek 的 [@deepseek-ai/dsh-experimental-agent-team-profile](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/experimental/agent-team-profile)，增加专家派工、模型偏好和工具权限限制。[查看源码来源](vendor/README.md)。
 
-## 如何分工
-
-主代理根据风险、依赖和专业缺口决定团队规模：
+## 专家分工
 
 | 专家 | 工作 |
 | --- | --- |
 | 设计 | UI 设计决策和指定的界面修改 |
 | 研究 | 只读调研 |
-| 实现 | 编写代码及指定的测试代码，不运行检查 |
+| 实现 | 编写代码和指定的测试，不运行检查 |
 | 架构 | 只读架构分析与问题诊断 |
-| 验收 | 独立检查，只运行主代理指定的命令 |
+| 验收 | 独立检查，只运行获准命令 |
 
-每位专家必须有完整派工，不能继续派人、提交、推送或使用未授权工具。主代理负责整合成果和管理任务板。
-
-模型偏好只能使用 DSH 已授权的模型。未配置时继承模型；推理等级按子任务选择。无效选择会明确报错，恢复成员时沿用原派工和模型设置。
+主代理决定团队规模、分配文件和工具权限，并整合成果。专家不能继续派人或自行提交代码。
 
 ## 安装
 
-需要 **DSH `0.2.1-rc.3`**、**Node.js 22 或更高版本**和 **Agent Team profile**。其他 DSH 版本尚未验证。
+需要 **DSH `0.2.1-rc.3`**、**Node.js 22+** 和上方链接的 Agent Team profile。其他 DSH 版本尚未验证。
 
-1. 获取本仓库，在 DSH profile 的依赖中加入 `"dsh-specialist-team": "link:/absolute/path/to/dsh-specialist-team"`。
-2. 将 `dsh-specialist-team` 加入 `dsh.profile.bundles`，安装 profile 依赖并重新加载 DSH。
-3. 确认 `spawn_teammate` 包含必填的 `specialist` 和 `assignment` 字段。
+1. 克隆本仓库，在 DSH profile 的依赖中加入 `"dsh-specialist-team": "link:/absolute/path/to/dsh-specialist-team"`。
+2. 将 `dsh-specialist-team` 加入 `dsh.profile.bundles`，安装依赖并重新加载 DSH。
+3. 确认 `spawn_teammate` 包含 `specialist` 和 `assignment` 字段。
 
-插件替换旧 Team 服务和工具，保留 Team 界面，并停用普通子代理入口。名称和简介支持中英文。默认不绑定供应商；模型偏好可在 `id: specialist-team-tools` 条目的 `config.models` 中设置。
+插件替换 Team 服务和工具，保留 Team 界面，并停用普通子代理入口。成员默认继承模型；如需指定模型，在 `id: specialist-team-tools` 的 `config.models` 中配置，须使用已授权模型。
 
 ## 使用边界
 
-插件检查权限，不判断成果质量，也不提供操作系统沙箱。递归搜索和获准命令仍可能访问指定文件之外的内容，主代理必须审核命令及其副作用。
+工具权限限制不等于系统沙箱。获准命令和递归搜索仍可能访问指定范围外的文件，授权前须审核命令。如何分工、成果是否合格，仍由模型判断。
 
-恢复专家时若缺少主代理，工具调用会暂停。卸载插件后，已有专家会继续被拦截，直到重启对应会话。旧的无派工成员保留原有行为。
-
-开发与测试、恢复和卸载说明见[维护文档](docs/maintenance.zh-CN.md)。上游代码保留 MIT 许可，详见[来源说明](vendor/README.md)。
+测试、恢复和卸载说明见[维护文档](docs/maintenance.zh-CN.md)。
