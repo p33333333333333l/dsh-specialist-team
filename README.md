@@ -1,42 +1,46 @@
-# DSH 专家协作插件
+# DSH Specialist Team
 
-为 DSH `0.2.1-rc.3` 提供默认任务分流、五类领域专家、模型路由和可执行的派工边界。安装后由系统提示直接加载策略，无需先触发技能。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-插件列表和详情页显示为“专家协作”，附带中文简介；内部组件显示为“团队服务”“协作工具”和“专家协作”。英文界面提供对应英文文案。安装包标识仍为 `dsh-specialist-team`。中文资源使用 DSH 注册的语言代码 `zh`（`locale/zh.json`），英文资源使用 `en`；页面的 `lang="zh-CN"` 不代表元数据查询使用 `zh-CN`。
+Specialist Team helps DSH `0.2.1-rc.3` decide when to handle a task directly and when to bring in specialists. It supports five specialties, model selection, and tool limits for each assignment. Once installed, it adds its rules to the system prompt automatically. You do not need to activate a skill first.
 
-## 功能
+The plugin list and detail page show localized names and descriptions. In Chinese, the plugin is “专家协作” and its components are “团队服务”, “协作工具”, and “专家协作”. English interfaces use the English equivalents. The package name remains `dsh-specialist-team`. Chinese metadata uses DSH's language code `zh` (`locale/zh.json`); English uses `en`. The page attribute `lang="zh-CN"` does not change the metadata lookup code to `zh-CN`.
 
-- 主代理根据风险、依赖和专业缺口选择直做、一位专家或专家团队；这项语义判断仍由模型完成，插件不按关键词强制增派成员。
-- `spawn_teammate` 必须提供专家类别和结构化派工：交付物、读写路径、允许工具、验收负责人、停止条件。无效派工在创建成员前拒绝。
-- 设计与实现专家可以使用明确授权的文件编辑工具；研究、架构和验收专家不能编辑项目。仅验收专家可执行主代理逐条指定的命令。
-- 专家只能向 Lead 汇报，不能递归派人、自行提交推送或调用未授权工具。任务板由 Lead 管理。
-- 派工在成员启动前保存到 Lead 的会话日志，并复制到成员日志；恢复成员继续使用原派工。单独恢复成员而未加载 Lead 时，插件拒绝工具调用，提示先恢复父会话。已有无派工成员保持原行为。
-- 沿用 DSH 的会话模型授权和实时预检。偏好可以配置，未配置时继承模型；推理等级由 Lead 按子任务显式选择，不统一固定最高档。
+## Features
 
-## 安装
+- The lead agent considers risk, dependencies, and gaps in expertise before choosing to work alone, ask one specialist, or assemble a team. The model makes this decision; keywords do not automatically trigger more agents.
+- Every `spawn_teammate` call must include a specialty and a structured assignment: the deliverable, readable and writable paths, allowed tools, reviewer, and stop condition. Invalid assignments are rejected before a member is created.
+- Design and implementation specialists can use file editing tools when explicitly authorized. Research, architecture, and verification specialists cannot edit the project. Only verification specialists can run commands, and each command must be specified by the lead agent.
+- Specialists report to the Lead. They cannot delegate further, commit or push changes, or use tools outside their assignment. The Lead manages the task board.
+- Before a member starts, its assignment is saved in the Lead's session log and copied into the member's log. A restored member keeps that assignment. If the member is restored without the Lead, tool calls are blocked until the parent session is restored. Existing members without assignments keep their previous behavior.
+- Model selection uses DSH's session authorization and live preflight checks. You can configure model preferences; otherwise, members inherit the model. The Lead chooses a reasoning level for each subtask instead of always using the highest level.
 
-将包安装到 DSH profile 的依赖，并将 `dsh-specialist-team` 加到 `dsh.profile.bundles`。依赖现有 Agent Team profile；它提供底层服务和界面。本包的 bundle 停用旧 Team 实例，注册独立的服务、工具和策略实例，并保留原 Team 界面；禁用旧普通子代理入口，避免重复注册。
+## Installation
 
-本机开发安装使用 profile 中的 `link:/var/home/admin/workspaces/dsh-specialist-team`，已登记依赖和 bundle，真实配置组合检查无跳过项或警告。全局工作约定已改为插件优先，技能只在插件未加载时回退。当前运行会话已收到插件注入的规则，`spawn_teammate` 已提供必填的 `specialist` 和 `assignment`。后续重新安装或升级时，可用这两项检查启用状态。
+Add the package to your DSH profile's dependencies and add `dsh-specialist-team` to `dsh.profile.bundles`. The existing Agent Team profile is required for the underlying services and interface. This package's bundle disables the old Team instances and registers its own service, tools, and policy while keeping the Team interface. It also disables the old ordinary subagent entry points to avoid duplicate registrations.
 
-本机已通过真实模型验收：新建 verifier 使用 `huanling-deepseek/deepseek-v4.1-flash-1017`、`medium` 推理等级；持久化描述符记录了该路由，成员收到职责、原样命令清单和工作目录，并完成 11 项测试。成员尝试追加未授权命令时被 guard 拒绝，随后原样命令成功执行并向 Lead 回报。此项验证覆盖当前会话中的实际派工、模型调用、命令限制和消息回传；未覆盖桌面应用完全重启后的所有交互。
+No provider is selected by default. To set preferences for the five specialties, configure `config.models` on the profile entry with `id: specialist-team-tools`. Each provider/model pair must be in the current authorization list. Update preferences when that list changes. An invalid configuration fails with an error; it does not silently switch models.
 
-默认没有绑定任何供应商。可以在 profile 的 `id: specialist-team-tools` 条目的 `config.models` 配置五类模型偏好；provider/model 必须出现在当前授权列表。模型列表变化后须同步偏好，错误配置会明确失败，不会静默换模型。
+### Local installation and verification
 
-## 职责限制的范围
+The development installation uses `link:/var/home/admin/workspaces/dsh-specialist-team` in the profile. Its dependency and bundle are registered, and configuration composition passed with no skipped entries or warnings. The global working rules use the plugin first and fall back to the skill when the plugin is absent. The running session has received the plugin's rules, and `spawn_teammate` exposes the required `specialist` and `assignment` fields. After reinstalling or upgrading, check for those rules and fields to confirm that the plugin is active.
 
-工具调用前的 guard 校验类别、允许工具、读写路径和验收命令。未授权的 MCP、终端、子代理等工具也会被拒绝。路径校验解析符号链接，并拒绝越出范围的直接文件访问。主代理使用 PTC 时，专家单独使用原生工具展示，避免开放任意代码执行入口。插件热卸载后，既有专家保持拒绝调用，需重启对应专家会话。
+A test with a live model created a verifier using `huanling-deepseek/deepseek-v4.1-flash-1017` with `medium` reasoning. The saved descriptor recorded that selection. The member received its role, exact command list, and working directory, then passed 11 tests. The tool guard rejected an attempt to append an unauthorized command; the member then ran the exact assigned command and reported to the Lead. This checked assignment creation, the model call, command restrictions, and messaging in the running session. It did not cover every desktop interaction after a full application restart.
 
-这不是操作系统沙箱。已授权读取目录的递归搜索可能遍历其中的链接；验收命令的程序及其子进程可以访问同一系统。主代理必须审核指定命令及其副作用。并发外部文件改动仍可能产生检查与执行之间的竞争。代码不宣称提供容器隔离或无法绕过的文件权限。
+## Scope of the restrictions
 
-主代理的协作判断、正确选模和按时停止仍需模型遵循注入的策略；插件保证的是派工格式及已注册工具调用的执行限制。隐藏提示不会代替执行检查，反之工具 guard 也不会评判交付质量。
+Before a tool runs, the guard checks the specialty, allowed tools, read and write paths, and verification commands. It also rejects unapproved MCP, terminal, and subagent tools. Path checks resolve symbolic links and reject direct file access outside the assigned paths. When the lead agent uses PTC, specialists receive native tools so they do not gain an arbitrary code execution entry point. Unloading the plugin blocks further tool calls from existing specialists; those specialist sessions must be restarted.
 
-## 开发与验证
+These checks do not provide an operating system sandbox. Recursive searches inside an authorized directory may follow links. An approved verification command and its subprocesses can access the same system, so the Lead must review the command and its side effects. External file changes can also race with path checks. The plugin does not provide container isolation or file permissions that cannot be bypassed.
 
-运行 `npm test`。目前 11 项回归覆盖结构化派工、路径与符号链接边界、额外参数掩盖实际路径的拦截、精确验收命令及其首轮上下文、非法历史记录、fresh/fork 首轮请求、冷恢复、Lead 缺失、插件卸载及写入故障回收。其中集成测试使用真实 Cordis、AgentLoop、工具执行层和 JSONL 存储，模型适配器为本地 mock，不产生远程模型费用。
+The model still has to follow the injected rules when deciding how to collaborate, choosing models, and stopping work. The plugin enforces assignment structure and restrictions on registered tool calls. Prompt instructions do not replace execution checks, and tool guards do not judge the quality of a deliverable.
 
-本包使用 ESM 源码，无单独构建步骤。开发机的依赖链接到现有 DSH runtime，避免重复 Cordis 服务实例。
+## Development and verification
 
-`vendor/` 来自 DeepSeek Harness `dsh-v0.2.1-rc.3`，包含此前验证的模型路由回移，保留上游 MIT 许可。本次只在 Team 创建前追加派工事件，并包装创建工具；修改记录见 [来源说明](vendor/README.md)。与其他 DSH 版本的兼容性尚未验证，升级时应重新运行真实 Loader 与成员恢复测试。
+Run `npm test`. The 11 regression tests cover structured assignments, path and symbolic link boundaries, extra arguments that try to hide the actual path, exact verification commands and their first-turn context, invalid historical records, first requests for fresh/fork members, cold restoration, a missing Lead, plugin unloading, and cleanup after a write failure. Integration tests use real Cordis, AgentLoop, tool execution, and JSONL storage with a local mock model adapter. They do not make remote model calls or incur model fees.
 
-卸载时从 profile 的依赖和 bundles 删除本包，恢复原 Agent Team 模块配置并重启。历史派工日志保留用于审计，普通 Team 实现会忽略这些扩展事件。
+The package uses ESM source and needs no separate build step. On the development machine, dependencies link to the existing DSH runtime to avoid duplicate Cordis service instances.
+
+`vendor/` comes from DeepSeek Harness `dsh-v0.2.1-rc.3`, includes the previously verified model routing backport, and retains the upstream MIT license. The plugin adds an assignment record before Team member creation and wraps the creation tool. See the [source notes](vendor/README.md) for the changes. Compatibility with other DSH versions has not been verified. After an upgrade, rerun the real Loader composition and member restoration tests.
+
+To uninstall, remove the package from the profile's dependencies and bundles, restore the original Agent Team module configuration, and restart. Historical assignment logs remain available for audit; the ordinary Team implementation ignores those extension events.
