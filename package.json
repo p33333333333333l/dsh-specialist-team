@@ -4,9 +4,17 @@
   "description": "Task routing, structured specialist assignments and role-scoped tool guards for DSH",
   "type": "module",
   "main": "./src/index.mjs",
-  "exports": {".": "./src/index.mjs", "./team": "./vendor/agent-team.mjs", "./tools": "./vendor/tool-agent-team.mjs"},
+  "exports": {
+    ".": "./src/index.mjs",
+    "./team": "./vendor/agent-team.mjs",
+    "./tools": "./vendor/tool-agent-team.mjs",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./team/locale/*.json": "./locale/team/*.json",
+    "./tools/locale/*.json": "./locale/tools/*.json"
+  },
   "license": "MIT",
-  "files": ["src", "vendor", "cordis.patch.yml", "README.md", "LICENSE"],
+  "files": ["src", "vendor", "locale", "cordis.patch.yml", "README.md", "LICENSE"],
   "scripts": {"test": "node --test test/*.test.mjs"},
   "engines": {"node": ">=22", "dsh": "0.2.1-rc.3"},
   "peerDependencies": {
