@@ -20,11 +20,33 @@ A separate live-model check created a verifier using `huanling-deepseek/deepseek
 
 The development profile uses a local link to this repository. Its dependency and bundle composition checks passed without skipped entries or warnings. The running session received the routing rules and the required `specialist` and `assignment` fields on `spawn_teammate`.
 
-After installing or upgrading, check that:
+After installing or upgrading, check these states in the plugin page:
 
-- The old Team service and tools are disabled and the three plugin entries load: `specialist-team-service`, `specialist-team-tools`, and `specialist-team`.
-- The ordinary subagent entry points are disabled.
-- Any `config.models` preferences on `specialist-team-tools` use currently authorized provider/model pairs. If authorization changes, update the preferences; invalid choices fail rather than silently falling back.
+| Component ID | Expected state | Purpose |
+| --- | --- | --- |
+| `agent-team`, `tool-agent-team` | Disabled | Original Team service and tools replaced by this plugin |
+| `tool-subagent`, `tool-subagent-fork` | Disabled | Ordinary subagent entry points |
+| `ui-agent-team` | Enabled and running | Upstream Team interface retained by this plugin |
+| `specialist-team-service`, `specialist-team-tools`, `specialist-team` | Enabled and running | This plugin's Team service, tools, and delegation policy |
+
+Any `config.models` preferences on `specialist-team-tools` must use currently authorized provider/model pairs. If authorization changes, update the preferences; invalid choices fail rather than silently falling back.
+
+### Original Team component errors or member creation failures
+
+This plugin's `cordis.patch.yml` disables the four original service or tool entries listed above by default, but the profile's own `cordis.patch.yml` can override those settings later. For example, a leftover `disabled: false` in the desktop profile re-enables an original component. The original and replacement implementations then register the same `agentTeams` service and tool names. An observed failure showed errors on `agent-team` and `tool-agent-team` while the Team interface and all three replacement components remained active.
+
+Inspect the current profile's `cordis.patch.yml` (the desktop default is `~/.dsh/profiles/desktop/cordis.patch.yml`). Remove overrides that re-enable the original components, or set them to disabled. The fix for the observed conflict was:
+
+```yaml
+- id: tool-agent-team
+  disabled: true
+- id: agent-team
+  disabled: true
+```
+
+Also keep `tool-subagent` and `tool-subagent-fork` disabled, and `ui-agent-team` enabled. Do not disable the three Specialist Team components to clear errors on the original components.
+
+After saving, wait for configuration hot reload, recheck the table above, then create a member with `specialist` and `assignment`, assign it a task, and confirm that it replies. Reload DSH if the configuration does not load automatically. This procedure repaired the desktop conflict on 2026-11-17: runtime state checks, member creation, and messaging passed, as did all 11 regression tests. It did not cover every interaction after a full desktop restart.
 
 The package identifier stays `dsh-specialist-team`. Display metadata uses `locale/en.json` and `locale/zh.json`; DSH's Chinese locale key is `zh`, even when the page's HTML language is `zh-CN`.
 

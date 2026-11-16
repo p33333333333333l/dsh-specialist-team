@@ -24,7 +24,7 @@ Requires **DSH `0.2.1-rc.3`**, **Node.js 22+**, and the upstream Agent Team prof
 
 1. Clone this repository. Add `"dsh-specialist-team": "link:/absolute/path/to/dsh-specialist-team"` to your DSH profile's dependencies.
 2. Add `dsh-specialist-team` to `dsh.profile.bundles`, install the dependencies, and reload DSH.
-3. Confirm that `spawn_teammate` includes `specialist` and `assignment`.
+3. Confirm that `spawn_teammate` includes `specialist` and `assignment`, then verify the component states under [installation checks and troubleshooting](docs/maintenance.md#installation-checks). The profile's `cordis.patch.yml` can override the plugin defaults: keep the replaced `agent-team` and `tool-agent-team` disabled, and keep `ui-agent-team` enabled.
 
 This replaces the Team service and tools, retains the Team interface, and disables ordinary subagent entry points. Members inherit the model by default. Optional model preferences go in `config.models` on `id: specialist-team-tools` and must use authorized models.
 

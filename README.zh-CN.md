@@ -24,7 +24,7 @@
 
 1. 克隆本仓库，在 DSH profile 的依赖中加入 `"dsh-specialist-team": "link:/absolute/path/to/dsh-specialist-team"`。
 2. 将 `dsh-specialist-team` 加入 `dsh.profile.bundles`，安装依赖并重新加载 DSH。
-3. 确认 `spawn_teammate` 包含 `specialist` 和 `assignment` 字段。
+3. 确认 `spawn_teammate` 包含 `specialist` 和 `assignment` 字段，并按[安装检查与冲突排查](docs/maintenance.zh-CN.md#安装检查)核对组件状态。profile 的 `cordis.patch.yml` 可覆盖插件默认值；不要重新启用已被替换的 `agent-team` 和 `tool-agent-team`，`ui-agent-team` 应保持启用。
 
 插件替换 Team 服务和工具，保留 Team 界面，并停用普通子代理入口。成员默认继承模型；如需指定模型，在 `id: specialist-team-tools` 的 `config.models` 中配置，须使用已授权模型。
 

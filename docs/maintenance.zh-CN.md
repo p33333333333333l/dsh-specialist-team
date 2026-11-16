@@ -20,11 +20,33 @@
 
 开发 profile 通过本地链接引用本仓库，依赖和 bundle 配置组合检查没有跳过项或警告。运行会话已收到分工规则，`spawn_teammate` 包含必填的 `specialist` 和 `assignment` 字段。
 
-安装或升级后检查：
+安装或升级后，在插件页面核对以下状态：
 
-- 旧 Team 服务与工具已停用，`specialist-team-service`、`specialist-team-tools`、`specialist-team` 三个插件条目正常加载。
-- 普通子代理入口已停用。
-- `specialist-team-tools` 的 `config.models` 偏好使用当前授权的 provider/model 组合。授权变化后需同步调整偏好；无效选择会报错，不会自动换模型。
+| 组件 ID | 预期状态 | 作用 |
+| --- | --- | --- |
+| `agent-team`、`tool-agent-team` | 停用 | 已由本插件替换的原版团队服务与工具 |
+| `tool-subagent`、`tool-subagent-fork` | 停用 | 普通子代理入口 |
+| `ui-agent-team` | 启用且正常运行 | 保留使用的上游团队界面 |
+| `specialist-team-service`、`specialist-team-tools`、`specialist-team` | 启用且正常运行 | 本插件的团队服务、工具和分工策略 |
+
+`specialist-team-tools` 的 `config.models` 偏好须使用当前授权的 provider/model 组合。授权变化后需同步调整偏好；无效选择会报错，不会自动换模型。
+
+### 原版团队组件报错或成员创建异常
+
+本插件的 `cordis.patch.yml` 默认停用上表中的四个原版服务或工具入口，但 profile 自身的 `cordis.patch.yml` 可在之后覆盖这些设置。例如，桌面 profile 中残留的 `disabled: false` 会重新启用原版组件。原版与替代实现会重复注册 `agentTeams` 服务和同名工具；已观察到 `agent-team`、`tool-agent-team` 报错，而团队界面和三个替代组件仍正常运行的情况。
+
+检查当前 profile 的 `cordis.patch.yml`（桌面默认路径为 `~/.dsh/profiles/desktop/cordis.patch.yml`），移除重新启用原版组件的覆盖项，或将其改为停用。本次冲突对应的修复示例：
+
+```yaml
+- id: tool-agent-team
+  disabled: true
+- id: agent-team
+  disabled: true
+```
+
+同时确认 `tool-subagent`、`tool-subagent-fork` 保持停用，`ui-agent-team` 保持启用。不要为了消除原版组件的报错而停用三个 Specialist Team 组件。
+
+保存后等待配置热重载，重新核对上表状态，并实际创建一个带 `specialist` 和 `assignment` 的成员、下发任务，确认成员能回复；如果配置未自动加载，再重新加载 DSH。2026-11-17 的桌面故障按此方法修复后，运行状态检查、成员创建与消息通信均通过，现有 11 项回归测试全部通过；未覆盖完整桌面重启后的所有交互。
 
 包标识仍为 `dsh-specialist-team`。显示文案使用 `locale/en.json` 和 `locale/zh.json`；DSH 中文语言键是 `zh`，不因页面 HTML 的语言为 `zh-CN` 而改变。
 
