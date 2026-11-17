@@ -1,6 +1,6 @@
 {
   "name": "dsh-specialist-team",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Task routing, structured specialist assignments and role-scoped tool guards for DSH",
   "type": "module",
   "main": "./src/index.mjs",
