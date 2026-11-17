@@ -13,8 +13,8 @@
     "./team/locale/*.json": "./locale/team/*.json",
     "./tools/locale/*.json": "./locale/tools/*.json"
   },
-  "license": "MIT",
-  "files": ["src", "vendor", "locale", "docs", "cordis.patch.yml", "README.md", "README.zh-CN.md", "LICENSE"],
+  "license": "Apache-2.0 AND MIT",
+  "files": ["src", "vendor", "locale", "docs", "cordis.patch.yml", "README.md", "README.zh-CN.md", "LICENSE", "NOTICE"],
   "scripts": {"test": "node --test test/*.test.mjs"},
   "engines": {"node": ">=22", "dsh": "0.2.1-rc.3"},
   "peerDependencies": {

@@ -1,6 +1,8 @@
 # 来源与改动
 
-上游：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，版本 [`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3)，提交 [`1f81c047`](https://github.com/deepseek-ai/deepseek-harness/commit/1f81c047fc48fa190a683e469daa699857e9afe8)。上游代码遵循 [MIT 许可](../LICENSE)。
+上游：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，版本 [`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3)，提交 [`1f81c047`](https://github.com/deepseek-ai/deepseek-harness/commit/1f81c047fc48fa190a683e469daa699857e9afe8)。上游代码遵循 [MIT 许可](LICENSE-MIT)。
+
+本项目的原创贡献及原创修改采用 [Apache-2.0](../LICENSE)。本目录的 `.mjs` 文件含上游代码与本项目修改，[model-routing.patch](model-routing.patch) 也保留了上游上下文；其中的上游部分继续适用 MIT，不因本次许可调整而改变。完整上游版权与许可声明保存在 [LICENSE-MIT](LICENSE-MIT)，分发时一并保留；另见 [NOTICE](../NOTICE)。
 
 | 来源 | 本插件中的用途 |
 | --- | --- |

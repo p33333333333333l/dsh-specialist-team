@@ -1,0 +1,18 @@
+DSH Specialist Team
+
+Original contributions to this project are licensed under the Apache License,
+Version 2.0. See LICENSE.
+
+This distribution includes code from DeepSeek Harness:
+https://github.com/deepseek-ai/deepseek-harness
+Upstream version: dsh-v0.2.1-rc.3
+Upstream commit: 1f81c047fc48fa190a683e469daa699857e9afe8
+Copyright (c) 2026 DeepSeek
+
+The upstream portions in vendor/*.mjs and the upstream context in
+vendor/model-routing.patch retain their MIT license. The full upstream
+copyright and permission notice is in vendor/LICENSE-MIT. Original changes
+made by this project are licensed under Apache-2.0; this does not replace
+or remove the upstream MIT permissions and notices.
+
+See vendor/README.md for the source mapping and description of changes.

@@ -33,3 +33,7 @@ This replaces the Team service and tools, retains the Team interface, and disabl
 Tool restrictions are not an OS sandbox. Approved commands and recursive searches can reach beyond assigned files; review commands before granting access. The model remains responsible for delegation decisions and work quality.
 
 For tests, recovery, and uninstall instructions, see [maintenance](docs/maintenance.md).
+
+## License
+
+Original contributions to this project are licensed under [Apache-2.0](LICENSE). Bundled upstream DeepSeek Harness code retains its [MIT license](vendor/LICENSE-MIT); our original changes to that code use Apache-2.0. The package declares `Apache-2.0 AND MIT` because both licenses apply to their respective portions, not as alternatives. See [NOTICE](NOTICE) and [source details](vendor/README.md) for attribution and scope.

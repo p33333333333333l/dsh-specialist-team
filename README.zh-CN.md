@@ -33,3 +33,7 @@
 工具权限限制不等于系统沙箱。获准命令和递归搜索仍可能访问指定范围外的文件，授权前须审核命令。如何分工、成果是否合格，仍由模型判断。
 
 测试、恢复和卸载说明见[维护文档](docs/maintenance.zh-CN.md)。
+
+## 许可证
+
+本项目的原创贡献采用 [Apache-2.0](LICENSE)。随包提供的上游 DeepSeek Harness 代码保留 [MIT 许可](vendor/LICENSE-MIT)，我们对这些代码的原创修改采用 Apache-2.0。包元数据标记为 `Apache-2.0 AND MIT`，表示两种许可分别适用于各自部分，并非任选其一。归属及范围见 [NOTICE](NOTICE) 和[来源说明](vendor/README.md)。
