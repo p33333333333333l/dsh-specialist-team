@@ -35,14 +35,19 @@ const Config = z.object({
 	freshProvider: z.string().default("spawn"),
 	forkProvider: z.string().default("fork"),
 	modelSelectionSettings: z.boolean().default(false),
+	// Volatile: the settings page rewrites this map while the plugin keeps running; it is read at each spawn.
 	models: z.object({
 		designer: SpecialistModelSchema,
 		researcher: SpecialistModelSchema,
 		engineer: SpecialistModelSchema,
 		architect: SpecialistModelSchema,
 		verifier: SpecialistModelSchema
-	})
+	}).default({}).volatile()
 });
+/** Current preference map from a volatile reference or a plain object (direct `apply()` callers). */
+function readModels(value) {
+	return value !== null && typeof value === "object" && typeof value.get === "function" ? value.get() : value;
+}
 /** Model-facing summary of per-specialist preferences, so Lead knows which categories already have a default route. */
 function describeModelPreferences(models) {
 	const entries = SPECIALISTS.map((role) => [role, models?.[role]]).filter(([, value]) => value !== void 0);
@@ -283,9 +288,17 @@ Use list_agents({}) to find your teammates and their names.
 To message another teammate, use send_message({ target: "<teammate name>", message: "..." }).`;
 			}
 		}));
+		// The preference map is volatile, so its summary is resolved at each prompt assembly instead of baked into the tool description.
+		if (selectionEnabled && ctx.agentTeams.membership(agent).role === "lead") register(scoped.systemPrompt.context({
+			name: "team:model-preferences",
+			order: scoped.systemPrompt.getContextOrder("TEAM_IDENTITY"),
+			required: true,
+			text: () => describeModelPreferences(readModels(config.models)),
+			interpolate: false
+		}));
 		register(scoped.tools.register(defineTool(specialistSpawn({
 			name: "spawn_teammate",
-			description: "Create one named, durable teammate. Only the Team Lead may call this tool." + (selectionEnabled ? " Choose specialist from the task to apply its configured model preference; explicit provider/model choices override it after list_subagent_models discovery. " + describeModelPreferences(config.models) : ""),
+			description: "Create one named, durable teammate. Only the Team Lead may call this tool." + (selectionEnabled ? " Choose specialist from the task to apply its configured model preference; explicit provider/model choices override it after list_subagent_models discovery." : ""),
 			parameters: {
 				name: {
 					type: "string",
@@ -331,7 +344,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
 			async execute(args, exec) {
 				const agent = callingAgent(exec.agent, "spawn_teammate");
 				const context = args.context ?? "fresh";
-				const preference = args.specialist === void 0 ? void 0 : config.models?.[args.specialist];
+				const preference = args.specialist === void 0 ? void 0 : readModels(config.models)?.[args.specialist];
 				const modelRequest = {
 					...!(args.provider !== void 0 || args.model !== void 0) && preference !== void 0 ? {
 						provider: preference.provider,
@@ -349,7 +362,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
 					assertAllowedModelSelection(policy, parentOptions, agentOptions, modelRequest);
 				} catch (error) {
 					if (!usingPreference) throw error;
-					throw new Error(`${error.message}. The configured ${args.specialist} preference (${preference.provider}/${preference.model}) is not authorized; ask the user to fix config.models on dsh-team-tools or authorize the model, or pass an authorized provider/model explicitly.`, { cause: error });
+					throw new Error(`${error.message}. The configured ${args.specialist} preference (${preference.provider}/${preference.model}) is not authorized for this Session. Ask the user to change it on the Specialist models settings page (config.models on dsh-team-tools) or to authorize that route for the Session, or pass an authorized provider/model explicitly.`, { cause: error });
 				}
 				const transport = context === "fork" ? config.forkProvider : config.freshProvider;
 				if (hasDelegationModelRequest(modelRequest)) {

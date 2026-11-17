@@ -6,6 +6,7 @@
   "main": "./src/index.mjs",
   "exports": {
     ".": "./src/index.mjs",
+    "./client": "./client.js",
     "./team": "./vendor/agent-team.mjs",
     "./tools": "./vendor/tool-agent-team.mjs",
     "./package.json": "./package.json",
@@ -14,7 +15,7 @@
     "./tools/locale/*.json": "./locale/tools/*.json"
   },
   "license": "Apache-2.0 AND MIT",
-  "files": ["src", "vendor", "locale", "docs", "cordis.patch.yml", "README.md", "README.zh-CN.md", "LICENSE", "NOTICE"],
+  "files": ["src", "vendor", "client.js", "locale", "docs", "cordis.patch.yml", "README.md", "README.zh-CN.md", "LICENSE", "NOTICE"],
   "scripts": {"test": "node --test test/*.test.mjs"},
   "engines": {"node": ">=22", "dsh": "0.2.1-rc.3"},
   "peerDependencies": {
@@ -29,5 +30,16 @@
     "@deepseek-ai/dsh-session": "*",
     "zod": "^4.4.3"
   },
-  "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}
+  "dsh": {
+    "bundle": {"patch": "./cordis.patch.yml"},
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
+    }
+  }
 }

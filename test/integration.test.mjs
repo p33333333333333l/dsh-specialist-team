@@ -23,6 +23,8 @@ import * as TeamTools from '../vendor/tool-agent-team.mjs';
 import * as Policy from '../src/index.mjs';
 
 const STRICT = { coordinatorMode: 'strict' };
+// Same write symbol cosmokit uses; the tests stand in for the Loader's volatile commit without importing cosmokit.
+const VOLATILE_WRITE = Symbol.for('cosmokit.volatile.write');
 class Adapter extends LlmAdapter {
   requests = [];
   async *stream(options) {
@@ -33,7 +35,13 @@ class Adapter extends LlmAdapter {
     });
   }
 }
-async function setup(root, mode = 'native', policyConfig = {}) {
+// Advertises two reasoning efforts for every model so routed children can carry an effort.
+class ReasoningAdapter extends Adapter {
+  resolveModel(provider, model) {
+    return Promise.resolve({ provider, id: model, name: model, reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] } });
+  }
+}
+async function setup(root, mode = 'native', policyConfig = {}, { toolsConfig, adapter = new Adapter(), allowedModels } = {}) {
   const ctx = new Context();
   for (const plugin of [Agents, Sessions, Projections, Llm, SystemPrompt, Fs]) await ctx.plugin(plugin);
   await ctx.plugin(Tools, { mode });
@@ -44,11 +52,12 @@ async function setup(root, mode = 'native', policyConfig = {}) {
   await ctx.plugin(Spawn);
   await ctx.plugin(Fork);
   await ctx.plugin(Team);
-  await ctx.plugin(TeamTools);
+  // Stands in for the Host's subagent-model-selection-settings service when model selection is enabled.
+  if (allowedModels) ctx.provide('subagentModelSelection', { current: () => ({ enabled: true, allowedModels }) });
+  const toolsFiber = await ctx.plugin(TeamTools, toolsConfig);
   const policyFiber = await ctx.plugin(Policy, policyConfig);
-  const adapter = new Adapter();
   ctx.llm.registerAdapter(['mock'], adapter);
-  return { ctx, adapter, policyFiber };
+  return { ctx, adapter, policyFiber, toolsFiber };
 }
 const args = (root, name, context = 'fresh') => ({ name, description: 'Read files', prompt: 'Inspect assigned files', context, specialist: 'researcher', assignment: {
   deliverable: 'Read-only report', read_paths: [root], write_paths: [], allowed_tools: ['read'], commands: [], reviewer: 'lead', stop_when: 'Report delivered',
@@ -435,10 +444,10 @@ test('explicit off behaves like the default and unknown modes are rejected', { t
     assert.equal((await execute(ctx, lead, 'bash', { value: 'ls' })).isError, false);
     assert.equal(calls.bash, 1);
     assert.throws(() => Policy.apply(ctx, { coordinatorMode: 'loose' }), /coordinatorMode must be one of off, strict/);
-    assert.deepEqual(Policy.Config.parse(undefined), { coordinatorMode: 'off' });
-    assert.deepEqual(Policy.Config.parse({}), { coordinatorMode: 'off' });
-    assert.equal(Policy.Config.parse({ coordinatorMode: 'strict' }).coordinatorMode, 'strict');
-    assert.throws(() => Policy.Config.parse({ coordinatorMode: 'loose' }));
+    assert.equal(Policy.Config(undefined).coordinatorMode.get(), 'off');
+    assert.equal(Policy.Config({}).coordinatorMode.get(), 'off');
+    assert.equal(Policy.Config({ coordinatorMode: 'strict' }).coordinatorMode.get(), 'strict');
+    assert.throws(() => Policy.Config({ coordinatorMode: 'loose' }));
   } finally {
     await ctx.fiber.dispose();
     rmSync(root, { recursive: true, force: true });
@@ -451,4 +460,266 @@ test('spawn tool description lists configured model preferences', () => {
   const some = TeamTools.describeModelPreferences({ researcher: { provider: 'p', model: 'm', reasoningEffort: 'high' }, verifier: { provider: 'q', model: 'n' } });
   assert.match(some, /researcher=p\/m \(high\), verifier=q\/n\./);
   assert.match(some, /designer, engineer, architect inherit the Lead route/);
+});
+
+const POLICY_MODEL = { provider: 'mock', model: 'mock' };
+// Stands in for the Loader: commits the new value into the running fiber's volatile reference, then emits its event.
+function setMode(current, mode) {
+  current.policyFiber.config.coordinatorMode[VOLATILE_WRITE](mode);
+  current.ctx.emit('loader/volatile-update', [['coordinatorMode']]);
+}
+function setModels(current, models) {
+  current.toolsFiber.config.models[VOLATILE_WRITE](models);
+  current.ctx.emit('loader/volatile-update', [['models']]);
+}
+
+test('Schemastery configs: coordinator mode defaults to off and rejects unknown modes', () => {
+  assert.equal(Policy.Config(undefined).coordinatorMode.get(), 'off');
+  assert.equal(Policy.Config({}).coordinatorMode.get(), 'off');
+  assert.equal(Policy.Config({ coordinatorMode: 'off' }).coordinatorMode.get(), 'off');
+  assert.equal(Policy.Config({ coordinatorMode: 'strict' }).coordinatorMode.get(), 'strict');
+  assert.throws(() => Policy.Config({ coordinatorMode: 'loose' }));
+  assert.throws(() => Policy.Config({ coordinatorMode: '' }));
+});
+
+test('Schemastery configs: models is a sparse volatile map with exact entry shapes', () => {
+  assert.deepEqual(TeamTools.Config({}).models.get(), {});
+  assert.deepEqual(TeamTools.Config(undefined).models.get(), {});
+  const researcher = { provider: 'p', model: 'm', reasoningEffort: 'high' };
+  assert.deepEqual(TeamTools.Config({ models: { researcher } }).models.get(), { researcher });
+  const profile = {
+    designer: { provider: 'a', model: 'one' },
+    researcher: { provider: 'b', model: 'two', reasoningEffort: 'low' },
+    engineer: { provider: 'c', model: 'three' },
+    architect: { provider: 'd', model: 'four', reasoningEffort: 'high' },
+    verifier: { provider: 'e', model: 'five' },
+  };
+  assert.deepEqual(TeamTools.Config({ models: profile }).models.get(), profile);
+  const bare = TeamTools.Config({ models: { engineer: { provider: 'c', model: 'three' } } }).models.get();
+  assert.equal('reasoningEffort' in bare.engineer, false);
+  assert.throws(() => TeamTools.Config({ models: { researcher: { provider: 'p' } } }));
+  assert.throws(() => TeamTools.Config({ models: { researcher: { model: 'm' } } }));
+  assert.throws(() => TeamTools.Config({ models: { researcher: { provider: '', model: 'm' } } }));
+  // Other settings keep their defaults and stay plain values.
+  const config = TeamTools.Config({});
+  assert.equal(config.interrupt, true);
+  assert.equal(config.modelSelectionSettings, false);
+});
+
+test('live coordinator mode switch applies to later tool calls and prompts on the same Lead', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-live-mode-'));
+  const current = await setup(root);
+  const { ctx } = current;
+  try {
+    const calls = countedTools(ctx, [...WORK_TOOLS, 'todo_write']);
+    const lead = await ctx.agentLoop.create('live-lead', POLICY_MODEL, { cwd: root });
+    const routing = async () => (await ctx.systemPrompt.assemble({ agent: lead, scope: lead })).contexts.find(s => s.name === 'specialist-team:routing').text;
+    assert.match(await routing(), /Do local, known, easily checked work directly/);
+    assert.equal((await execute(ctx, lead, 'bash', { value: 'ls' })).isError, false);
+    assert.equal(calls.bash, 1);
+
+    setMode(current, 'strict');
+    assert.match(await routing(), /Strict coordinator mode/);
+    for (const name of WORK_TOOLS) {
+      const denied = await execute(ctx, lead, name, { file_path: join(root, 'x'), value: 'x' });
+      assert.equal(denied.isError, true, name);
+      assert.match(JSON.stringify(denied), /Strict coordinator mode/, name);
+    }
+    assert.equal(calls.bash, 1);
+    assert.equal(calls.read, 0);
+    assert.equal((await execute(ctx, lead, 'todo_write', { value: 'plan' })).isError, false);
+    const spawned = await execute(ctx, lead, 'spawn_teammate', args(root, 'live-reader'));
+    assert.equal(spawned.isError, false, JSON.stringify(spawned));
+
+    setMode(current, 'off');
+    assert.match(await routing(), /Do local, known, easily checked work directly/);
+    assert.doesNotMatch(await routing(), /Strict coordinator mode/);
+    assert.equal((await execute(ctx, lead, 'bash', { value: 'ls' })).isError, false);
+    assert.equal(calls.bash, 2);
+    assert.equal((await execute(ctx, lead, 'read', { file_path: join(root, 'x') })).isError, false);
+
+    setMode(current, 'strict');
+    assert.equal((await execute(ctx, lead, 'bash', { value: 'ls' })).isError, true);
+    assert.equal(calls.bash, 2);
+    // A Lead created while strict is guarded without any further update.
+    const second = await ctx.agentLoop.create('live-lead-2', POLICY_MODEL, { cwd: root });
+    assert.equal((await execute(ctx, second, 'bash', { value: 'ls' })).isError, true);
+    assert.equal(calls.bash, 2);
+  } finally {
+    await ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('live coordinator mode switch toggles native presentation only while strict', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-live-ptc-'));
+  // Starts strict, like the existing PTC fixture, so no PTC runtime is needed to create the Lead.
+  const current = await setup(root, 'ptc', STRICT);
+  const { ctx } = current;
+  try {
+    const lead = await ctx.agentLoop.create('live-ptc-lead', POLICY_MODEL, { cwd: root });
+    assert.equal(ctx.tools.modeFor(lead), 'native');
+    setMode(current, 'off');
+    assert.equal(ctx.tools.modeFor(lead), 'ptc');
+    setMode(current, 'strict');
+    assert.equal(ctx.tools.modeFor(lead), 'native');
+    // A repeated event while strict must not declare the presentation twice.
+    ctx.emit('loader/volatile-update', [['coordinatorMode']]);
+    assert.equal(ctx.tools.modeFor(lead), 'native');
+    setMode(current, 'off');
+    assert.equal(ctx.tools.modeFor(lead), 'ptc');
+  } finally {
+    await ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('strict switched on live stays fail-closed after unload, and spawning is refused', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-live-unload-'));
+  const current = await setup(root);
+  const { ctx, policyFiber } = current;
+  try {
+    const calls = countedTools(ctx, ['bash', 'read', 'todo_write']);
+    const lead = await ctx.agentLoop.create('live-unload-lead', POLICY_MODEL, { cwd: root });
+    setMode(current, 'strict');
+    await policyFiber.dispose();
+    for (const name of ['bash', 'read']) {
+      const denied = await execute(ctx, lead, name, { file_path: join(root, 'x'), value: 'ls' });
+      assert.equal(denied.isError, true, name);
+      assert.match(JSON.stringify(denied), /Strict coordinator mode/, name);
+    }
+    assert.equal(calls.bash, 0);
+    assert.equal(calls.read, 0);
+    const spawn = await execute(ctx, lead, 'spawn_teammate', args(root, 'after-live-unload'));
+    assert.equal(spawn.isError, true);
+    assert.match(JSON.stringify(spawn), /policy was unloaded/);
+    assert.ok(!ctx.agentTeams.listMembers(lead).some(m => m.name === 'after-live-unload'));
+    assert.equal((await execute(ctx, lead, 'todo_write', { value: 'plan' })).isError, false);
+    const prompt = await ctx.systemPrompt.assemble({ agent: lead, scope: lead });
+    // Unloading removes the routing prompt (as before); only the guard stays.
+    assert.equal(prompt.contexts.find(s => s.name === 'specialist-team:routing'), undefined);
+  } finally {
+    await ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('mode switched back to off before unload, or never switched, leaves the Lead unrestricted after unload', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-live-off-unload-'));
+  const switched = await setup(root);
+  try {
+    const calls = countedTools(switched.ctx, ['bash']);
+    const lead = await switched.ctx.agentLoop.create('off-unload-lead', POLICY_MODEL, { cwd: root });
+    setMode(switched, 'strict');
+    assert.equal((await execute(switched.ctx, lead, 'bash', { value: 'ls' })).isError, true);
+    setMode(switched, 'off');
+    await switched.policyFiber.dispose();
+    assert.equal((await execute(switched.ctx, lead, 'bash', { value: 'ls' })).isError, false);
+    assert.equal(calls.bash, 1);
+    const spawn = await execute(switched.ctx, lead, 'spawn_teammate', args(root, 'after-off-unload'));
+    assert.doesNotMatch(JSON.stringify(spawn), /policy was unloaded/);
+  } finally {
+    await switched.ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+  const root2 = mkdtempSync(join(tmpdir(), 'specialist-never-switched-'));
+  const never = await setup(root2);
+  try {
+    const calls = countedTools(never.ctx, ['bash']);
+    const lead = await never.ctx.agentLoop.create('never-lead', POLICY_MODEL, { cwd: root2 });
+    await never.policyFiber.dispose();
+    assert.equal((await execute(never.ctx, lead, 'bash', { value: 'ls' })).isError, false);
+    assert.equal(calls.bash, 1);
+  } finally {
+    await never.ctx.fiber.dispose();
+    rmSync(root2, { recursive: true, force: true });
+  }
+});
+
+const ALLOWED_MODELS = [
+  { provider: 'mock', model: 'mock' }, { provider: 'mock', model: 'other' }, { provider: 'mock', model: 'third' },
+];
+const modelFor = (adapter, member) => adapter.requests.find(r => r.sessionId === member.id);
+const memberNamed = (ctx, lead, name) => ctx.agentTeams.listMembers(lead).find(m => m.name === name);
+
+test('specialist model preferences are read at each spawn and can change live', { timeout: 20000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-live-models-'));
+  const current = await setup(root, 'native', {}, {
+    adapter: new ReasoningAdapter(), allowedModels: ALLOWED_MODELS,
+    toolsConfig: { modelSelectionSettings: true, models: { researcher: { provider: 'mock', model: 'other', reasoningEffort: 'high' } } },
+  });
+  const { ctx, adapter } = current;
+  try {
+    const lead = await ctx.agentLoop.create('models-lead', POLICY_MODEL, { cwd: root });
+    // The tool description keeps only the static guidance; the live list is a prompt context.
+    const description = ctx.tools.get('spawn_teammate', lead).description;
+    assert.match(description, /Choose specialist from the task/);
+    assert.doesNotMatch(description, /Configured model preferences/);
+    const preferences = async () => (await ctx.systemPrompt.assemble({ agent: lead, scope: lead })).contexts.find(s => s.name === 'team:model-preferences')?.text;
+    assert.match(await preferences(), /researcher=mock\/other \(high\)/);
+
+    const first = await execute(ctx, lead, 'spawn_teammate', args(root, 'pref-first'));
+    assert.equal(first.isError, false, JSON.stringify(first));
+    const firstMember = memberNamed(ctx, lead, 'pref-first');
+    await spinUntil(() => modelFor(adapter, firstMember));
+    assert.equal(modelFor(adapter, firstMember).model, 'other');
+    assert.equal(modelFor(adapter, firstMember).reasoningEffort, 'high');
+
+    setModels(current, { researcher: { provider: 'mock', model: 'third' } });
+    assert.match(await preferences(), /researcher=mock\/third\./);
+    assert.doesNotMatch(await preferences(), /\(high\)/);
+    const second = await execute(ctx, lead, 'spawn_teammate', args(root, 'pref-second'));
+    assert.equal(second.isError, false, JSON.stringify(second));
+    const secondMember = memberNamed(ctx, lead, 'pref-second');
+    await spinUntil(() => modelFor(adapter, secondMember));
+    assert.equal(modelFor(adapter, secondMember).model, 'third');
+    assert.equal(modelFor(adapter, secondMember).reasoningEffort, undefined);
+    // The member created earlier keeps its route.
+    assert.equal(modelFor(adapter, firstMember).model, 'other');
+
+    // An explicit provider/model wins over the preference.
+    setModels(current, { researcher: { provider: 'mock', model: 'other' } });
+    const explicit = await execute(ctx, lead, 'spawn_teammate', { ...args(root, 'pref-explicit'), provider: 'mock', model: 'third' });
+    assert.equal(explicit.isError, false, JSON.stringify(explicit));
+    const explicitMember = memberNamed(ctx, lead, 'pref-explicit');
+    await spinUntil(() => modelFor(adapter, explicitMember));
+    assert.equal(modelFor(adapter, explicitMember).model, 'third');
+
+    // Clearing every preference makes the next member inherit the Lead route.
+    setModels(current, {});
+    assert.match(await preferences(), /No specialist has a configured model preference/);
+    const inherited = await execute(ctx, lead, 'spawn_teammate', args(root, 'pref-inherit'));
+    assert.equal(inherited.isError, false, JSON.stringify(inherited));
+    const inheritedMember = memberNamed(ctx, lead, 'pref-inherit');
+    await spinUntil(() => modelFor(adapter, inheritedMember));
+    assert.equal(modelFor(adapter, inheritedMember).model, 'mock');
+  } finally {
+    await ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an unauthorized preference creates no child and explains where to fix it', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-unauthorized-model-'));
+  const current = await setup(root, 'native', {}, {
+    adapter: new ReasoningAdapter(), allowedModels: ALLOWED_MODELS,
+    toolsConfig: { modelSelectionSettings: true, models: { researcher: { provider: 'mock', model: 'forbidden' } } },
+  });
+  const { ctx } = current;
+  try {
+    const lead = await ctx.agentLoop.create('unauthorized-lead', POLICY_MODEL, { cwd: root });
+    const denied = await execute(ctx, lead, 'spawn_teammate', args(root, 'unauthorized-reader'));
+    assert.equal(denied.isError, true);
+    assert.match(JSON.stringify(denied), /mock\/forbidden/);
+    assert.match(JSON.stringify(denied), /Specialist models settings page/);
+    assert.match(JSON.stringify(denied), /pass an authorized provider\/model explicitly/);
+    assert.ok(!ctx.agentTeams.listMembers(lead).some(m => m.name === 'unauthorized-reader'));
+    // Fixing the preference live makes the same call succeed.
+    setModels(current, { researcher: { provider: 'mock', model: 'other' } });
+    const fixed = await execute(ctx, lead, 'spawn_teammate', args(root, 'unauthorized-reader'));
+    assert.equal(fixed.isError, false, JSON.stringify(fixed));
+  } finally {
+    await ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
 });

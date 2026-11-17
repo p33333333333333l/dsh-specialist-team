@@ -1,20 +1,39 @@
 import { appendPluginRecord } from '@deepseek-ai/dsh-session';
+import z from '@deepseek-ai/schemastery';
 import { ASSIGNMENT_RECORD, assignmentIn, leadToolDenial, rolePrompt, toolDenial } from './policy.mjs';
-import { z } from 'zod';
 import { COORDINATOR_MODES, routingPrompt } from './prompts.mjs';
 
 export const name = 'specialist-team';
 export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt', 'sessions'];
 
-/** `coordinatorMode`: `off` (default) leaves the Lead's tools alone; `strict` restricts the Lead to dispatch and coordination. */
-export const Config = z.object({ coordinatorMode: z.enum(COORDINATOR_MODES).default('off') }).default({ coordinatorMode: 'off' });
+/**
+ * `coordinatorMode`: `off` (default) leaves the Lead's tools alone; `strict` restricts the Lead to dispatch and coordination.
+ * The field is volatile, so the settings page can switch it while the plugin keeps running.
+ */
+export const Config = z.object({
+  coordinatorMode: z.union(COORDINATOR_MODES.map(mode => z.const(mode))).default('off').volatile(),
+}).default({});
+
+/** Current mode from a volatile reference or a plain string (direct `apply()` callers). */
+function modeOf(value) {
+  const mode = value !== null && typeof value === 'object' && typeof value.get === 'function' ? value.get() : value;
+  return mode ?? 'off';
+}
 
 export function apply(ctx, config = {}) {
-  const coordinatorMode = config.coordinatorMode ?? 'off';
-  if (!COORDINATOR_MODES.includes(coordinatorMode)) throw new Error(`specialist-team: coordinatorMode must be one of ${COORDINATOR_MODES.join(', ')}`);
-  const strict = coordinatorMode === 'strict';
+  const readMode = () => {
+    const mode = modeOf(config.coordinatorMode);
+    if (!COORDINATOR_MODES.includes(mode)) throw new Error(`specialist-team: coordinatorMode must be one of ${COORDINATOR_MODES.join(', ')}`);
+    return mode;
+  };
+  readMode();
   const installed = new Map();
+  // Per Lead: re-evaluates whether it should present native tools after a mode change.
+  const presentations = new Map();
   let stopped = false;
+  // The mode in force when the plugin unloaded; the Lead guard keeps enforcing it afterwards.
+  let unloadMode;
+  const effectiveMode = () => (stopped ? unloadMode : readMode());
   const install = async agent => {
     if (stopped || installed.has(agent)) return;
     const own = assignmentIn(agent, agent.id);
@@ -23,22 +42,39 @@ export function apply(ctx, config = {}) {
     const disposers = [];
     installed.set(agent, disposers);
     if (!own && membership?.role === 'lead') {
-      if (strict) {
-        // Strict coordinator mode: Lead only dispatches, coordinates and asks the user.
-        disposers.push(agent.ctx.tools.presentAs('native'));
-        // Installed before the prompt and, like the specialist guard, deliberately kept out of
-        // `disposers`: unloading the plugin must not return real tools to the Lead.
-        agent.ctx.tools.guard(exec => {
-          if (exec.agent !== agent) return;
-          // Spawning is the only path that creates assigned members; once the policy is unloaded it would create unrestricted ones.
-          if (stopped && exec.name === 'spawn_teammate') return 'Specialist policy was unloaded; restart this Lead session before spawning specialists.';
-          return leadToolDenial(exec);
-        });
-      }
+      // Strict coordinator mode: Lead only dispatches, coordinates and asks the user.
+      // Native presentation keeps run_code, a code-execution entry point the guard cannot inspect, away from a strict Lead.
+      let nativeDisposer = null;
+      const syncPresentation = () => {
+        if (stopped || installed.get(agent) !== disposers) return;
+        const strict = readMode() === 'strict';
+        if (strict && !nativeDisposer) nativeDisposer = agent.ctx.tools.presentAs('native');
+        else if (!strict && nativeDisposer) {
+          const dispose = nativeDisposer;
+          nativeDisposer = null;
+          dispose();
+        }
+      };
+      disposers.push(() => {
+        const dispose = nativeDisposer;
+        nativeDisposer = null;
+        dispose?.();
+      });
+      presentations.set(agent, syncPresentation);
+      syncPresentation();
+      // Installed before the prompt and, like the specialist guard, deliberately kept out of
+      // `disposers`: unloading the plugin must not return real tools to a strict Lead.
+      agent.ctx.tools.guard(exec => {
+        if (exec.agent !== agent) return;
+        if (effectiveMode() !== 'strict') return;
+        // Spawning is the only path that creates assigned members; once the policy is unloaded it would create unrestricted ones.
+        if (stopped && exec.name === 'spawn_teammate') return 'Specialist policy was unloaded; restart this Lead session before spawning specialists.';
+        return leadToolDenial(exec);
+      });
       disposers.push(agent.ctx.systemPrompt.context({
         name: 'specialist-team:routing',
         order: agent.ctx.systemPrompt.getContextOrder('TEAM_IDENTITY'), required: true,
-        text: routingPrompt(coordinatorMode), interpolate: false,
+        text: () => routingPrompt(effectiveMode()), interpolate: false,
       }));
       return;
     }
@@ -73,11 +109,18 @@ export function apply(ctx, config = {}) {
   ctx.on('agent/disposed', ({ agent }) => {
     for (const dispose of installed.get(agent) ?? []) dispose();
     installed.delete(agent);
+    presentations.delete(agent);
+  });
+  // Emitted by the Loader right after it commits a volatile config change into this plugin's references.
+  ctx.on('loader/volatile-update', () => {
+    for (const sync of presentations.values()) sync();
   });
   ctx.effect(() => () => {
+    unloadMode = readMode();
     stopped = true;
     for (const disposers of installed.values()) for (const dispose of disposers) dispose();
     installed.clear();
+    presentations.clear();
   });
   return Promise.all(ctx.agents.list().map(install));
 }
