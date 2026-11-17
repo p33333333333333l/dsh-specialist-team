@@ -435,6 +435,10 @@ test('explicit off behaves like the default and unknown modes are rejected', { t
     assert.equal((await execute(ctx, lead, 'bash', { value: 'ls' })).isError, false);
     assert.equal(calls.bash, 1);
     assert.throws(() => Policy.apply(ctx, { coordinatorMode: 'loose' }), /coordinatorMode must be one of off, strict/);
+    assert.deepEqual(Policy.Config.parse(undefined), { coordinatorMode: 'off' });
+    assert.deepEqual(Policy.Config.parse({}), { coordinatorMode: 'off' });
+    assert.equal(Policy.Config.parse({ coordinatorMode: 'strict' }).coordinatorMode, 'strict');
+    assert.throws(() => Policy.Config.parse({ coordinatorMode: 'loose' }));
   } finally {
     await ctx.fiber.dispose();
     rmSync(root, { recursive: true, force: true });

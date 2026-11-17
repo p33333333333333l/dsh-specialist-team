@@ -7,7 +7,7 @@ export const name = 'specialist-team';
 export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt', 'sessions'];
 
 /** `coordinatorMode`: `off` (default) leaves the Lead's tools alone; `strict` restricts the Lead to dispatch and coordination. */
-export const Config = z.object({ coordinatorMode: z.enum(COORDINATOR_MODES).default('off') });
+export const Config = z.object({ coordinatorMode: z.enum(COORDINATOR_MODES).default('off') }).default({ coordinatorMode: 'off' });
 
 export function apply(ctx, config = {}) {
   const coordinatorMode = config.coordinatorMode ?? 'off';
