@@ -10,13 +10,13 @@
 
 ## 已有验证
 
-最近一次回归测试（`npm test`，即 `node --test test/*.test.mjs`，分支 `feat/coordinator-only-20261117`，2026-11-17 验证）22 项全部通过。覆盖结构化派工、路径与符号链接检查、额外参数掩盖实际路径、精确验收命令及其首轮上下文、非法历史记录、fresh/fork 请求、冷恢复、主代理缺失、插件卸载和写入失败后的清理，以及严格协调模式和配置项的用例。
+2026-11-18 在 `main` 上运行 `npm test`（即 `node --test test/*.test.mjs`），22 项全部通过。覆盖结构化派工、路径与符号链接检查、额外参数掩盖实际路径、精确验收命令及其首轮上下文、非法历史记录、fresh/fork 请求、冷恢复、主代理缺失、插件卸载和写入失败后的清理，以及严格协调模式和配置项的用例。
 
-这 22 项包含策略用例（`test/policy.test.mjs` 中的白名单矩阵）和围绕 `coordinatorMode` 的集成用例：严格模式 guard 行为、默认（`off`）下主代理不受限且使用宽松提示词、非法模式被拒绝，以及 `spawn_teammate` 说明中的模型偏好摘要（`test/integration.test.mjs`），均已通过。桌面应用的真实手动验收（默认模式检查和“严格协调模式”中的第 2–5 步）尚未运行；本次改动时该插件已在桌面 profile 中停用。
+这 22 项包含策略用例（`test/policy.test.mjs` 中的白名单矩阵）和围绕 `coordinatorMode` 的集成用例：严格模式 guard 行为、默认（`off`）下主代理不受限且使用宽松提示词、非法模式被拒绝，以及 `spawn_teammate` 说明中的模型偏好摘要（`test/integration.test.mjs`）。桌面应用中的手动验收尚未运行：既没有验证专家按配置的模型启动，也没有执行“严格协调模式”中的第 2–5 步。
 
 集成测试使用真实 Cordis、AgentLoop、工具执行层和 JSONL 存储，模型由本地模拟，不调用远程模型。
 
-早期历史记录（早于严格协调模式，当时测试共 11 项）：另一次真实模型验收创建了验收专家，使用 `huanling-deepseek/deepseek-v4.1-flash-1017` 和 `medium` 推理等级，保存的描述符记录了该选择。成员收到职责、工作目录和原样命令清单；追加未授权命令的尝试被拒绝，随后执行指定命令，通过全部 11 项测试并向主代理汇报。这次验收没有覆盖桌面应用完全重启后的所有交互。
+严格协调模式出现之前，测试共 11 项，当时另一次真实模型验收创建了验收专家，使用 `huanling-deepseek/deepseek-v4.1-flash-1017` 和 `medium` 推理等级，保存的描述符记录了该选择。成员收到职责、工作目录和原样命令清单；追加未授权命令的尝试被拒绝，随后执行指定命令，通过全部 11 项测试并向主代理汇报。这次验收没有覆盖桌面应用完全重启后的所有交互。
 
 ## 安装检查
 
@@ -33,7 +33,7 @@
 
 这三个组件 ID 在 2026-11-18 之前叫 `specialist-team-service`、`specialist-team-tools` 和 `specialist-team`。如果 profile 的 `cordis.patch.yml` 仍使用旧 ID，请改成新 ID；沿用旧 ID 的条目不会作用于新组件。
 
-`dsh-team-tools` 的 `config.models` 偏好须使用当前授权的 provider/model 组合。授权变化后需同步调整偏好；无效选择会报错，不会自动换模型。曾出现过这类故障：偏好写了已下线的模型 id `deepseek-v4.1-flash-1017`，`spawn_teammate` 被拒绝，主代理随后给所有成员自选了自己的模型。现在报错信息会指出 `dsh-team-tools` 的 `config.models`。推理等级也必须是模型支持的值，例如 `claude-sonnet-5-5` 只支持 `off`、`high`、`xhigh`。
+`dsh-team-tools` 的 `config.models` 偏好须使用当前授权的 provider/model 组合。授权变化后需同步调整偏好；无效选择会报错，不会自动换模型。这类故障出现过：偏好写了已下线的模型 id `deepseek-v4.1-flash-1017`，`spawn_teammate` 被拒绝，主代理随后给所有成员自选了自己的模型。现在报错信息会指出 `dsh-team-tools` 的 `config.models`。推理等级也必须是模型支持的值，例如 `claude-sonnet-5-5` 只支持 `off`、`high`、`xhigh`。
 
 ### 原版团队组件报错或成员创建异常
 
@@ -48,7 +48,7 @@
   disabled: true
 ```
 
-同时确认 `tool-subagent`、`tool-subagent-fork` 保持停用，`ui-agent-team` 保持启用。不要为了消除原版组件的报错而停用三个 Specialist Team 组件。
+同时确认 `tool-subagent`、`tool-subagent-fork` 保持停用，`ui-agent-team` 保持启用。不要为了消除原版组件的报错而停用本插件的三个组件。
 
 保存后等待配置热重载，重新核对上表状态，并实际创建一个带 `specialist` 和 `assignment` 的成员、下发任务，确认成员能回复；如果配置未自动加载，再重新加载 DSH。2026-11-17 的桌面故障按此方法修复后，运行状态检查、成员创建与消息通信均通过，现有 11 项回归测试全部通过；未覆盖完整桌面重启后的所有交互。
 

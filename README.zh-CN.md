@@ -35,17 +35,17 @@
 
 ## 安装
 
-需要 **DSH `0.2.1-rc.3`**、**Node.js 22+** 和上方链接的 Agent Team profile。其他 DSH 版本尚未验证。
+需要 DSH `0.2.1-rc.3`、Node.js 22+ 和上方链接的 Agent Team profile。其他 DSH 版本尚未验证。
 
 1. 克隆本仓库，在 DSH profile 的依赖中加入 `"dsh-specialist-team": "link:/absolute/path/to/dsh-specialist-team"`。
 2. 将 `dsh-specialist-team` 加入 `dsh.profile.bundles`，安装依赖并重新加载 DSH。
-3. 确认 `spawn_teammate` 包含 `specialist` 和 `assignment` 字段，并按[安装检查与冲突排查](docs/maintenance.zh-CN.md#安装检查)核对组件状态。profile 的 `cordis.patch.yml` 可覆盖插件默认值；不要重新启用已被替换的 `agent-team` 和 `tool-agent-team`，`ui-agent-team` 应保持启用。
+3. 确认 `spawn_teammate` 包含 `specialist` 和 `assignment` 字段，并按[避免插件冲突](#避免插件冲突)和[安装检查](docs/maintenance.zh-CN.md#安装检查)核对组件状态。
 
 插件替换 Team 服务和工具，保留 Team 界面，并停用普通子代理入口。成员默认继承主代理的模型；如需为专家指定模型，见[配置](#配置)。
 
 ## 避免插件冲突
 
-本插件替换了团队服务和工具，并关闭了普通子代理入口。安装后以及启用其他插件之后，请在插件页核对下列组件：
+安装后以及启用其他插件之后，请在插件页核对下列组件：
 
 | 组件 ID | 应保持 | 原因 |
 | --- | --- | --- |
@@ -55,7 +55,7 @@
 | `subagent-model-selection-settings` | 启用，并设 `enabled: true`，`allowedModels` 列出你用到的所有模型 | 设置 `modelSelectionSettings: true` 时，`dsh-team-tools` 从它读取授权模型。缺少它，模型偏好和 `list_subagent_models` 都无法使用。 |
 | `dsh-team-service`、`dsh-team-tools`、`dsh-team` | 启用 | 本插件。 |
 
-本插件的 `cordis.patch.yml` 默认已停用上述四个组件，但你的 profile 自己的 `cordis.patch.yml` 中后写的 `disabled: false` 会把它们重新打开。也不要启用另带团队或子代理派工工具、或替换 `agentTeams` 服务的其他插件，它们会注册同名工具或绕过专家检查。处理方法见[排查说明](docs/maintenance.zh-CN.md#原版团队组件报错或成员创建异常)。
+本插件的 `cordis.patch.yml` 默认已停用上述四个组件，但你的 profile 自己的 `cordis.patch.yml` 中后写的 `disabled: false` 会把它们重新打开。也不要启用另带团队或子代理派工工具、或替换 `agentTeams` 服务的其他插件，它们可能注册同名工具或绕过专家检查。处理方法见[排查说明](docs/maintenance.zh-CN.md#原版团队组件报错或成员创建异常)。
 
 ## 配置
 

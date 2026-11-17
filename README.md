@@ -35,17 +35,17 @@ The guard stays in force after the plugin is unloaded, and the lead can no longe
 
 ## Install
 
-Requires **DSH `0.2.1-rc.3`**, **Node.js 22+**, and the upstream Agent Team profile linked above. Other DSH versions are untested.
+Requires DSH `0.2.1-rc.3`, Node.js 22+, and the upstream Agent Team profile linked above. Other DSH versions are untested.
 
 1. Clone this repository. Add `"dsh-specialist-team": "link:/absolute/path/to/dsh-specialist-team"` to your DSH profile's dependencies.
 2. Add `dsh-specialist-team` to `dsh.profile.bundles`, install the dependencies, and reload DSH.
-3. Confirm that `spawn_teammate` includes `specialist` and `assignment`, then verify the component states under [installation checks and troubleshooting](docs/maintenance.md#installation-checks). The profile's `cordis.patch.yml` can override the plugin defaults: keep the replaced `agent-team` and `tool-agent-team` disabled, and keep `ui-agent-team` enabled.
+3. Confirm that `spawn_teammate` includes `specialist` and `assignment`, then check the component states as described in [Avoid plugin conflicts](#avoid-plugin-conflicts) and [installation checks](docs/maintenance.md#installation-checks).
 
 This replaces the Team service and tools, retains the Team interface, and disables ordinary subagent entry points. Members inherit the lead's model unless you configure model preferences, see [Configuration](#configuration).
 
 ## Avoid plugin conflicts
 
-This plugin replaces the Team service and tools and turns off the ordinary subagent entry points. Check these components on the plugin page after installing, and again after enabling any other plugin:
+Check these components on the plugin page after installing, and again after enabling any other plugin:
 
 | Component ID | Keep | Why |
 | --- | --- | --- |
@@ -55,7 +55,7 @@ This plugin replaces the Team service and tools and turns off the ordinary subag
 | `subagent-model-selection-settings` | Enabled, with `enabled: true` and every model you use in `allowedModels` | `dsh-team-tools` reads the authorized models from it when `modelSelectionSettings: true`. Without it, model preferences and `list_subagent_models` are unavailable. |
 | `dsh-team-service`, `dsh-team-tools`, `dsh-team` | Enabled | This plugin. |
 
-This plugin's `cordis.patch.yml` disables the four components above by default, but a later `disabled: false` in your profile's own `cordis.patch.yml` turns them back on. Also do not enable another plugin that provides its own Team or subagent dispatch tools or replaces the `agentTeams` service. It would register tools with the same names or bypass the specialist checks. See [troubleshooting](docs/maintenance.md#original-team-component-errors-or-member-creation-failures) for the fix.
+This plugin's `cordis.patch.yml` disables the four components above by default, but a later `disabled: false` in your profile's own `cordis.patch.yml` turns them back on. Also do not enable another plugin that provides its own Team or subagent dispatch tools or replaces the `agentTeams` service. Such a plugin could register tools with the same names or bypass the specialist checks. See [troubleshooting](docs/maintenance.md#original-team-component-errors-or-member-creation-failures) for the fix.
 
 ## Configuration
 

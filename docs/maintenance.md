@@ -10,13 +10,13 @@ The supported baseline is DSH `0.2.1-rc.3`. Before supporting another release, v
 
 ## Verification
 
-The latest regression run (`npm test`, which runs `node --test test/*.test.mjs`, on branch `feat/coordinator-only-20261117`, verified 2026-11-17) passed all 22 of 22 tests. They cover structured assignments, path and symlink checks, misleading extra path arguments, exact verification commands and their first-request context, malformed saved records, fresh/fork requests, cold recovery, a missing Lead, plugin unload, and cleanup after a failed write, plus the strict coordinator cases and the configuration cases.
+On 2026-11-18, `npm test` (which runs `node --test test/*.test.mjs`) passed all 22 tests on `main`. They cover structured assignments, path and symlink checks, misleading extra path arguments, exact verification commands and their first-request context, malformed saved records, fresh/fork requests, cold recovery, a missing Lead, plugin unload, and cleanup after a failed write, plus the strict coordinator cases and the configuration cases.
 
-The 22 tests include the policy cases (allowlist matrix in `test/policy.test.mjs`) and integration cases for `coordinatorMode`: strict guard behavior, the default (`off`) lead being unrestricted with the lenient prompt, rejection of an invalid mode, and the model preference summary shown in the `spawn_teammate` description (in `test/integration.test.mjs`). All of them passed. Real-desktop manual acceptance (the default mode check and steps 2–5 under "Strict coordinator mode") has not been run yet; the plugin was disabled in the desktop profile when this change was made.
+The 22 tests include the policy cases (allowlist matrix in `test/policy.test.mjs`) and integration cases for `coordinatorMode`: strict guard behavior, the default (`off`) lead being unrestricted with the lenient prompt, rejection of an invalid mode, and the model preference summary shown in the `spawn_teammate` description (in `test/integration.test.mjs`). Manual acceptance in the desktop app has not been run: neither a specialist starting on its configured model nor steps 2–5 under "Strict coordinator mode".
 
 Integration tests use real Cordis, AgentLoop, tool dispatch, and JSONL storage with a local mock model. They make no remote model calls.
 
-Earlier historical record, made before strict coordinator mode was added and when the suite had 11 tests: a separate live-model check created a verifier using `huanling-deepseek/deepseek-v4.1-flash-1017` with `medium` reasoning effort. Its saved descriptor recorded that route and effort. The member received its role, working directory, and exact command list. An attempt to append an unauthorized command was rejected; the assigned command then passed all 11 tests and the member reported to the Lead. This check did not cover every interaction after a full desktop restart.
+Before strict coordinator mode existed, when the suite had 11 tests, a separate live-model check created a verifier using `huanling-deepseek/deepseek-v4.1-flash-1017` with `medium` reasoning effort. Its saved descriptor recorded that route and effort. The member received its role, working directory, and exact command list. An attempt to append an unauthorized command was rejected; the assigned command then passed all 11 tests and the member reported to the Lead. This check did not cover every interaction after a full desktop restart.
 
 ## Installation checks
 
@@ -33,7 +33,7 @@ After installing or upgrading, check these states in the plugin page:
 
 These component IDs were `specialist-team-service`, `specialist-team-tools` and `specialist-team` before 2026-11-18. If your profile's `cordis.patch.yml` still uses the old IDs, rename them; entries with unknown IDs are not applied to the new components.
 
-Any `config.models` preferences on `dsh-team-tools` must use currently authorized provider/model pairs. If authorization changes, update the preferences; invalid choices fail rather than silently falling back. A real failure of this kind happened when a preference named a retired model id (`deepseek-v4.1-flash-1017`): `spawn_teammate` was rejected, and the lead then picked its own model for every member. The error now names `config.models` on `dsh-team-tools`. Efforts must also be supported by the model, for example `claude-sonnet-5-5` accepts only `off`, `high` and `xhigh`.
+Any `config.models` preferences on `dsh-team-tools` must use currently authorized provider/model pairs. If authorization changes, update the preferences; invalid choices fail rather than silently falling back. This has happened: a preference named a retired model id (`deepseek-v4.1-flash-1017`): `spawn_teammate` was rejected, and the lead then picked its own model for every member. The error now names `config.models` on `dsh-team-tools`. Efforts must also be supported by the model, for example `claude-sonnet-5-5` accepts only `off`, `high` and `xhigh`.
 
 ### Original Team component errors or member creation failures
 
@@ -48,7 +48,7 @@ Inspect the current profile's `cordis.patch.yml` (the desktop default is `~/.dsh
   disabled: true
 ```
 
-Also keep `tool-subagent` and `tool-subagent-fork` disabled, and `ui-agent-team` enabled. Do not disable the three Specialist Team components to clear errors on the original components.
+Also keep `tool-subagent` and `tool-subagent-fork` disabled, and `ui-agent-team` enabled. Do not disable this plugin's three components to clear errors on the original components.
 
 After saving, wait for configuration hot reload, recheck the table above, then create a member with `specialist` and `assignment`, assign it a task, and confirm that it replies. Reload DSH if the configuration does not load automatically. This procedure repaired the desktop conflict on 2026-11-17: runtime state checks, member creation, and messaging passed, as did all 11 regression tests. It did not cover every interaction after a full desktop restart.
 
