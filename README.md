@@ -28,6 +28,10 @@ For independent review, the lead assigns the check to someone other than the imp
 
 In the plugin manager, open **dsh-specialist-team → Specialist model settings**. Specialists without a preference inherit the lead's model by default.
 
+![The Chinese plugin manager shows the Specialist model settings panel above three running components.](docs/specialist-settings.jpg)
+
+The screenshot shows the component’s former Chinese label, “专家协作”.
+
 - After changing the provider, select a model. The existing preference stays in effect until then. Choosing a model, changing its reasoning effort, or clearing the preference saves automatically. Only new members use the change.
 - Model selection requires a provider/model pair authorized for the session. This page does not grant access. For authorization errors, check `enabled` and `allowedModels` in the subagent model selection settings. Choose a reasoning effort listed for that provider and model.
 
