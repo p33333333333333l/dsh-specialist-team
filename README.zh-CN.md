@@ -43,6 +43,20 @@
 
 插件替换 Team 服务和工具，保留 Team 界面，并停用普通子代理入口。成员默认继承主代理的模型；如需为专家指定模型，见[配置](#配置)。
 
+## 避免插件冲突
+
+本插件替换了团队服务和工具，并关闭了普通子代理入口。安装后以及启用其他插件之后，请在插件页核对下列组件：
+
+| 组件 ID | 应保持 | 原因 |
+| --- | --- | --- |
+| `agent-team`、`tool-agent-team` | 停用 | 原版团队服务和工具注册了同名的 `agentTeams` 服务和工具（`spawn_teammate`、`send_message` 等），同时运行会让原版组件报错。 |
+| `tool-subagent`、`tool-subagent-fork` | 停用 | 内置的 `subagent`、`subagent_fork` 工具绕过专家派工、工具限制和下文的模型偏好，它们启动的子代理继承主会话的模型。 |
+| `ui-agent-team` | 启用 | 本插件继续使用的团队界面。 |
+| `subagent-model-selection-settings` | 启用，并设 `enabled: true`，`allowedModels` 列出你用到的所有模型 | 设置 `modelSelectionSettings: true` 时，`dsh-team-tools` 从它读取授权模型。缺少它，模型偏好和 `list_subagent_models` 都无法使用。 |
+| `dsh-team-service`、`dsh-team-tools`、`dsh-team` | 启用 | 本插件。 |
+
+本插件的 `cordis.patch.yml` 默认已停用上述四个组件，但你的 profile 自己的 `cordis.patch.yml` 中后写的 `disabled: false` 会把它们重新打开。也不要启用另带团队或子代理派工工具、或替换 `agentTeams` 服务的其他插件，它们会注册同名工具或绕过专家检查。处理方法见[排查说明](docs/maintenance.zh-CN.md#原版团队组件报错或成员创建异常)。
+
 ## 配置
 
 配置写在 profile 的 `cordis.patch.yml` 中，两项都可选。

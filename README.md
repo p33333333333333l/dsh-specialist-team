@@ -43,6 +43,20 @@ Requires **DSH `0.2.1-rc.3`**, **Node.js 22+**, and the upstream Agent Team prof
 
 This replaces the Team service and tools, retains the Team interface, and disables ordinary subagent entry points. Members inherit the lead's model unless you configure model preferences, see [Configuration](#configuration).
 
+## Avoid plugin conflicts
+
+This plugin replaces the Team service and tools and turns off the ordinary subagent entry points. Check these components on the plugin page after installing, and again after enabling any other plugin:
+
+| Component ID | Keep | Why |
+| --- | --- | --- |
+| `agent-team`, `tool-agent-team` | Disabled | The original Team service and tools register the same `agentTeams` service and tool names (`spawn_teammate`, `send_message` and others). Running both causes errors on the original components. |
+| `tool-subagent`, `tool-subagent-fork` | Disabled | The built-in `subagent` and `subagent_fork` tools skip specialist assignments, tool limits and the model preferences below. Subagents they start inherit the main session's model. |
+| `ui-agent-team` | Enabled | The Team interface this plugin still uses. |
+| `subagent-model-selection-settings` | Enabled, with `enabled: true` and every model you use in `allowedModels` | `dsh-team-tools` reads the authorized models from it when `modelSelectionSettings: true`. Without it, model preferences and `list_subagent_models` are unavailable. |
+| `dsh-team-service`, `dsh-team-tools`, `dsh-team` | Enabled | This plugin. |
+
+This plugin's `cordis.patch.yml` disables the four components above by default, but a later `disabled: false` in your profile's own `cordis.patch.yml` turns them back on. Also do not enable another plugin that provides its own Team or subagent dispatch tools or replaces the `agentTeams` service. It would register tools with the same names or bypass the specialist checks. See [troubleshooting](docs/maintenance.md#original-team-component-errors-or-member-creation-failures) for the fix.
+
 ## Configuration
 
 Settings go in the profile's `cordis.patch.yml`. Both are optional.
