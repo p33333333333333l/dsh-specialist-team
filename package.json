@@ -1,6 +1,6 @@
 {
   "name": "dsh-specialist-team",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Task routing, structured specialist assignments and role-scoped tool guards for DSH",
   "type": "module",
   "main": "./src/index.mjs",
@@ -15,9 +15,25 @@
     "./tools/locale/*.json": "./locale/tools/*.json"
   },
   "license": "Apache-2.0 AND MIT",
-  "files": ["src", "vendor", "client.js", "locale", "docs", "cordis.patch.yml", "README.md", "README.zh-CN.md", "LICENSE", "NOTICE"],
-  "scripts": {"test": "node --test test/*.test.mjs"},
-  "engines": {"node": ">=22", "dsh": "0.2.1-rc.3"},
+  "files": [
+    "src",
+    "vendor",
+    "client.js",
+    "locale",
+    "docs",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22",
+    "dsh": "0.2.1-rc.3"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.5",
     "@deepseek-ai/schemastery": "*",
@@ -31,7 +47,9 @@
     "zod": "^4.4.3"
   },
   "dsh": {
-    "bundle": {"patch": "./cordis.patch.yml"},
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [

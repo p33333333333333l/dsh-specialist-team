@@ -6,11 +6,11 @@ The lead can handle simple tasks directly or assign work to specialists with def
 
 ## Install
 
-Requires DSH `0.2.1-rc.3`, Node.js 22+, and the [upstream Agent Team profile](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/experimental/agent-team-profile). Other DSH versions are untested.
+Requires DSH `0.2.1-rc.3` and Node.js 22+. Other DSH versions are untested.
 
 1. Clone this repository. Add `"dsh-specialist-team": "link:/absolute/path/to/dsh-specialist-team"` to your DSH profile's dependencies, using the absolute path of your checkout.
 2. Add `dsh-specialist-team` to `dsh.profile.bundles`, install the profile dependencies and reload DSH.
-3. Use the [installation checklist](docs/maintenance.md#installation-checks) on the plugins page. Specialist Team keeps the original Team interface and replaces its service and tools. `spawn_teammate` should now include `specialist` and `assignment`.
+3. Use the [installation checklist](docs/maintenance.md#installation-checks) on the plugins page. `spawn_teammate` should now include `specialist` and `assignment`.
 
 ## Specialists
 
@@ -29,7 +29,7 @@ For independent review, the lead assigns the check to someone other than the imp
 In the plugin manager, open **Specialist Team → Specialist model settings**. Specialists without a preference inherit the lead's model by default.
 
 - After changing the provider, select a model. The existing preference stays in effect until then. Choosing a model, changing its reasoning effort, or clearing the preference saves automatically. Only new members use the change.
-- Model selection requires a provider/model pair authorized for the session. This page does not grant access. For authorization errors, check `enabled` and `allowedModels` in the subagent model selection settings. Choose an effort supported by the selected model.
+- Model selection requires a provider/model pair authorized for the session. This page does not grant access. For authorization errors, check `enabled` and `allowedModels` in the subagent model selection settings. Choose a reasoning effort listed for that provider and model.
 
 ## Strict coordinator mode
 

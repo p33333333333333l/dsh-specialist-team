@@ -6,7 +6,7 @@
 
 | 来源 | 本插件中的用途 |
 | --- | --- |
-| [@deepseek-ai/dsh-experimental-agent-team-profile](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/experimental/agent-team-profile) | 提供基础 Team 服务、工具和界面；安装时保留界面，替换服务与工具 |
+| [@deepseek-ai/dsh-experimental-agent-team-profile](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/experimental/agent-team-profile) | 上游 Team 服务、工具和界面的装配参考；本插件注册自己的服务和工具，不安装该界面 |
 | [@deepseek-ai/dsh-experimental-agent-team](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/experimental/agent-team) | [agent-team.mjs](agent-team.mjs)：成员管理、消息和任务板 |
 | [@deepseek-ai/dsh-experimental-tool-agent-team](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/experimental/tool-agent-team) | [tool-agent-team.mjs](tool-agent-team.mjs)：供模型调用的 Team 工具 |
 | [@deepseek-ai/dsh-tool-subagent](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/subagent/tool-subagent) | [tool-subagent.mjs](tool-subagent.mjs) 和 [list-models-l-21_ZpK.mjs](list-models-l-21_ZpK.mjs)：模型选择与发现 |

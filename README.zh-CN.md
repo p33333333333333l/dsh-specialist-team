@@ -6,11 +6,11 @@
 
 ## 安装
 
-适用基线：DSH `0.2.1-rc.3`、Node.js 22+ 和[上游 Agent Team profile](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/experimental/agent-team-profile)。其他版本尚未验证。
+适用基线：DSH `0.2.1-rc.3`、Node.js 22+。其他版本尚未验证。
 
 1. 克隆本仓库，在 DSH profile 的依赖中加入 `"dsh-specialist-team": "link:/absolute/path/to/dsh-specialist-team"`，将示例路径换为本地仓库的绝对路径。
 2. 将 `dsh-specialist-team` 加入 `dsh.profile.bundles`，安装 profile 依赖并重新加载 DSH。
-3. 在插件页按[安装检查表](docs/maintenance.zh-CN.md#安装检查)核对组件。插件保留原版团队界面，替换团队服务和工具；`spawn_teammate` 应包含 `specialist` 和 `assignment` 两个字段。
+3. 在插件页按[安装检查表](docs/maintenance.zh-CN.md#安装检查)核对组件。确认专家工具已加载：`spawn_teammate` 应包含 `specialist` 和 `assignment` 两个字段。
 
 ## 专家分工
 
@@ -29,7 +29,7 @@
 在插件管理器中打开**专家协作 → 专家模型设置**。未指定模型的专家默认沿用主代理模型。
 
 - 更换提供方后，再选择模型；在选定之前，旧配置继续生效。选定模型、调整推理强度或清除偏好都会自动保存。修改只影响新创建的专家，已有成员沿用原配置。
-- 只能使用当前会话获准的模型组合。此页面不会修改授权名单；遇到授权错误时，检查子代理模型选择设置中的 `enabled` 和 `allowedModels`。推理强度应以所选模型实际提供的选项为准。
+- 只能使用当前会话获准的模型组合。此页面不会修改授权名单；遇到授权错误时，检查子代理模型选择设置中的 `enabled` 和 `allowedModels`。推理强度以当前提供方为该模型列出的选项为准。
 
 ## 严格协调模式
 

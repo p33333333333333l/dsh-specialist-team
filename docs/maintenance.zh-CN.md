@@ -4,7 +4,7 @@
 
 ## 开发
 
-本包直接运行 ESM 源码，无需构建。准备好 DSH 依赖后运行 `npm test`。开发仓库使用已安装 runtime 的依赖，确保 Cordis 服务共享同一实例。
+本包直接运行 ESM 源码，无需构建。准备好 DSH 依赖后运行 `npm test`。
 
 当前支持的基线是 DSH `0.2.1-rc.3`。适配其他版本前，需验证实际 Loader 配置组合、工具参数和成员恢复。随包提供的 Team 代码来自该版本，模型路由改动和 MIT 许可见[来源说明](../vendor/README.md)。
 
@@ -14,7 +14,6 @@
 
 ## 安装检查
 
-开发 profile 通过本地链接引用本仓库，依赖和 bundle 配置组合检查没有跳过项或警告。运行会话已收到分工规则，`spawn_teammate` 包含必填的 `specialist` 和 `assignment` 字段。
 
 安装或升级后，在插件页面核对以下状态：
 
@@ -22,19 +21,17 @@
 | --- | --- | --- |
 | `agent-team`、`tool-agent-team` | 停用 | 已由本插件替换的原版团队服务与工具 |
 | `tool-subagent`、`tool-subagent-fork` | 停用 | 普通子代理入口 |
-| `ui-agent-team` | 启用且正常运行 | 保留使用的上游团队界面 |
+| `ui-agent-team` | 如需使用此界面，保持启用 | 本插件不会安装原版团队界面 |
 | `subagent-model-selection-settings` | 已加载 | 默认工具配置依赖此服务；缺失时团队工具无法初始化。使用模型偏好还需开启模型选择并授权对应组合。 |
 | `dsh-team-service`、`dsh-team-tools`、`dsh-team` | 启用且正常运行 | 本插件的团队服务、工具和分工策略 |
 
-这三个组件 ID 在 2026-11-18 之前叫 `specialist-team-service`、`specialist-team-tools` 和 `specialist-team`。如果 profile 的 `cordis.patch.yml` 仍使用旧 ID，请改成新 ID；沿用旧 ID 的条目不会作用于新组件。
-
-`dsh-team-tools` 的 `config.models` 偏好须使用当前授权的 provider/model 组合。授权变化后需同步调整偏好；无效选择会报错，不会自动换模型。这类故障出现过：偏好写了已下线的模型 id `deepseek-v4.1-flash-1017`，`spawn_teammate` 被拒绝，主代理随后给所有成员自选了自己的模型。现在报错信息会指出 `dsh-team-tools` 的 `config.models`。推理等级也必须是模型支持的值，例如 `claude-sonnet-5-5` 只支持 `off`、`high`、`xhigh`。
+`dsh-team-tools` 的 `config.models` 偏好须使用当前授权的 provider/model 组合。授权变化后需同步调整偏好；无效选择会报错，不会自动换模型。手动填写 `reasoningEffort` 时，以设置页中当前提供方为该模型列出的档位为准。
 
 ### 原版团队组件报错或成员创建异常
 
 本插件的 `cordis.patch.yml` 默认停用上表中的四个原版服务或工具入口，但 profile 自身的 `cordis.patch.yml` 可在之后覆盖这些设置。例如，桌面 profile 中残留的 `disabled: false` 会重新启用原版组件。原版与替代实现会重复注册 `agentTeams` 服务和同名工具；已观察到 `agent-team`、`tool-agent-team` 报错，而团队界面和三个替代组件仍正常运行的情况。
 
-检查当前 profile 的 `cordis.patch.yml`（桌面默认路径为 `~/.dsh/profiles/desktop/cordis.patch.yml`），移除重新启用原版组件的覆盖项，或将其改为停用。本次冲突对应的修复示例：
+检查当前 profile 的 `cordis.patch.yml`（例如 `~/.dsh/profiles/desktop/cordis.patch.yml`），移除重新启用原版组件的覆盖项，或将其改为停用。本次冲突对应的修复示例：
 
 ```yaml
 - id: tool-agent-team
@@ -43,11 +40,10 @@
   disabled: true
 ```
 
-同时确认 `tool-subagent`、`tool-subagent-fork` 保持停用，`ui-agent-team` 保持启用。不要为了消除原版组件的报错而停用本插件的三个组件。
+同时确认 `tool-subagent`、`tool-subagent-fork` 保持停用，如需使用原版团队界面则保持 `ui-agent-team` 启用。不要为了消除原版组件的报错而停用本插件的三个组件。
 
-保存后等待配置热重载，重新核对上表状态，并实际创建一个带 `specialist` 和 `assignment` 的成员、下发任务，确认成员能回复；如果配置未自动加载，再重新加载 DSH。2026-11-17 的桌面故障按此方法修复后，运行状态检查、成员创建与消息通信均通过，现有 11 项回归测试全部通过；未覆盖完整桌面重启后的所有交互。
+保存后等待配置热重载，重新核对上表状态，并实际创建一个带 `specialist` 和 `assignment` 的成员、下发任务，确认成员能回复；如果配置未自动加载，再重新加载 DSH。
 
-包标识仍为 `dsh-specialist-team`。显示文案使用 `locale/en.json` 和 `locale/zh.json`；DSH 中文语言键是 `zh`，不因页面 HTML 的语言为 `zh-CN` 而改变。
 
 ## 派工与恢复
 
@@ -63,10 +59,10 @@
 
 通过设置页切换严格模式，或在 `dsh-team` 的配置中设置 `coordinatorMode: strict`。开启时，主代理的工具调用受 [允许列表](../src/policy.mjs) 限制；关闭后不再施加这项限制。两种模式下专家的派工检查都有效。若在严格模式下卸载，主代理仍受限，也不能创建新专家，直到重启会话。
 
-安装或修改白名单后的验收步骤（先设置 `coordinatorMode: strict`；默认 `off` 时改为确认主代理仍可直接读文件、运行命令）：
+安装或修改白名单后的验收步骤（先设置 `coordinatorMode: strict`；默认 `off` 时改为确认本插件不会拦截原本获准的工具调用）：
 
 1. 运行 `npm test`，确认严格协调模式的用例通过。
-2. 在主代理会话中请求读取一个简单文件。主代理应创建研究专家，而不是直接调用；直接调用 `read`、`bash`、`edit` 或 `git_*` 应被拒绝，提示含 “Strict coordinator mode”。
+2. 在主代理会话中请求读取一个简单文件。检查工具结果：主代理直接调用 `read`、`bash`、`edit` 或 `git_*` 应被拒绝，提示含 “Strict coordinator mode”。
 3. 要求主代理提交代码。它应向你报告冲突，不运行 git，也不委派提交。
 4. 确认 `spawn_teammate`、`ask_user_question`、`todo_write` 和任务板仍可用。
 5. 完全重启并恢复主代理会话后，重复第 2 步。
@@ -75,4 +71,4 @@
 
 ## 卸载
 
-从 profile 的依赖和 `dsh.profile.bundles` 中移除本包，恢复原 Agent Team 配置，再重启 DSH。历史派工记录保留用于审计，普通 Team 实现会忽略这些扩展记录。
+从 profile 的依赖和 `dsh.profile.bundles` 中移除本包，还原安装时改过的 Team 配置，再重启 DSH。历史派工记录保留用于审计，普通 Team 实现会忽略这些扩展记录。
