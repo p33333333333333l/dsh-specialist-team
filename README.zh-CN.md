@@ -34,6 +34,18 @@
 
 测试、恢复和卸载说明见[维护文档](docs/maintenance.zh-CN.md)。
 
+## 开发目录
+
+| 位置 | 用途 |
+| --- | --- |
+| [`src/`](src/) | 插件入口、专家派工、提示词和工具权限规则。 |
+| [`vendor/`](vendor/) | 随包提供的上游运行代码、本项目补丁及来源和许可说明；属于运行依赖，不能当作构建缓存清理。 |
+| [`locale/`](locale/) | 插件、Team 服务和工具的中英文文案。 |
+| [`docs/`](docs/) | 安装检查、测试、恢复及卸载的维护说明。 |
+| [`test/`](test/) | 权限规则与插件集成的自动化检查。 |
+
+根目录的 `package.json` 和 `cordis.patch.yml` 定义包入口与插件装配，`LICENSE` 和 `NOTICE` 记录许可与归属，保留在原位。测试命令为 `npm test`。
+
 ## 许可证
 
 本项目的原创贡献采用 [Apache-2.0](LICENSE)。随包提供的上游 DeepSeek Harness 代码保留 [MIT 许可](vendor/LICENSE-MIT)，我们对这些代码的原创修改采用 Apache-2.0。包元数据标记为 `Apache-2.0 AND MIT`，表示两种许可分别适用于各自部分，并非任选其一。归属及范围见 [NOTICE](NOTICE) 和[来源说明](vendor/README.md)。
