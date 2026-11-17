@@ -10,13 +10,7 @@
 
 ## 已有验证
 
-2026-11-18 在 `main` 上运行 `npm test`（即 `node --test test/*.test.mjs`），22 项全部通过。覆盖结构化派工、路径与符号链接检查、额外参数掩盖实际路径、精确验收命令及其首轮上下文、非法历史记录、fresh/fork 请求、冷恢复、主代理缺失、插件卸载和写入失败后的清理，以及严格协调模式和配置项的用例。
-
-这 22 项包含策略用例（`test/policy.test.mjs` 中的白名单矩阵）和围绕 `coordinatorMode` 的集成用例：严格模式 guard 行为、默认（`off`）下主代理不受限且使用宽松提示词、非法模式被拒绝，以及 `spawn_teammate` 说明中的模型偏好摘要（`test/integration.test.mjs`）。桌面应用中的手动验收尚未运行：既没有验证专家按配置的模型启动，也没有执行“严格协调模式”中的第 2–5 步。
-
-集成测试使用真实 Cordis、AgentLoop、工具执行层和 JSONL 存储，模型由本地模拟，不调用远程模型。
-
-严格协调模式出现之前，测试共 11 项，当时另一次真实模型验收创建了验收专家，使用 `huanling-deepseek/deepseek-v4.1-flash-1017` 和 `medium` 推理等级，保存的描述符记录了该选择。成员收到职责、工作目录和原样命令清单；追加未授权命令的尝试被拒绝，随后执行指定命令，通过全部 11 项测试并向主代理汇报。这次验收没有覆盖桌面应用完全重启后的所有交互。
+运行 `npm test`。权限测试检查工具、路径和命令范围；集成测试使用本地模拟模型验证派工、恢复和热更新；设置页测试覆盖自动保存、写入冲突、断线和中英文控件。自动化测试不能代替桌面重启、登录和实际提供方调用的验收。
 
 ## 安装检查
 
@@ -29,6 +23,7 @@
 | `agent-team`、`tool-agent-team` | 停用 | 已由本插件替换的原版团队服务与工具 |
 | `tool-subagent`、`tool-subagent-fork` | 停用 | 普通子代理入口 |
 | `ui-agent-team` | 启用且正常运行 | 保留使用的上游团队界面 |
+| `subagent-model-selection-settings` | 已加载 | 默认工具配置依赖此服务；缺失时团队工具无法初始化。使用模型偏好还需开启模型选择并授权对应组合。 |
 | `dsh-team-service`、`dsh-team-tools`、`dsh-team` | 启用且正常运行 | 本插件的团队服务、工具和分工策略 |
 
 这三个组件 ID 在 2026-11-18 之前叫 `specialist-team-service`、`specialist-team-tools` 和 `specialist-team`。如果 profile 的 `cordis.patch.yml` 仍使用旧 ID，请改成新 ID；沿用旧 ID 的条目不会作用于新组件。
@@ -66,13 +61,7 @@
 
 ## 严格协调模式
 
-严格模式需主动启用：在 `id: dsh-team` 条目的 `config` 中设置 `coordinatorMode: strict`（`src/index.mjs` 的 `Config`，默认 `off`；其他值会抛出 `specialist-team: coordinatorMode must be one of off, strict`）。`off` 时不安装主代理 guard，使用宽松路由提示词（`src/prompts.mjs` 的 `routingPrompt('off')`）。两种模式下专家的派工检查都生效。
-
-`src/index.mjs` 中的主代理 guard 在主代理每次调用工具前，调用 `src/policy.mjs` 的 `leadToolDenial`。`COORDINATOR_TOOLS` 是按名称精确匹配的列表，不支持前缀或通配符。未知、改名和新增的工具一律拒绝，直到有人审核该列表和测试矩阵。`decompress` 只有在不带 `toFile` 和 `imageRef` 时才允许，因为这两个参数会写文件或图片。主代理同时使用原生工具展示，PTC 宿主不会给它 `run_code`。
-
-guard 先于分工提示词注册，其释放函数刻意不放入卸载清理。策略卸载后，主代理仍使用同一白名单，并且不能再调用 `spawn_teammate`，因为此时创建的成员没有派工限制；需重启主代理会话才能再次创建成员。专家和无派工的旧成员走各自的路径，不受主代理 guard 影响。
-
-整合、提交和发布仍是主代理角色的职责，但该模式下主代理和所有专家都没有对应工具。主代理会把此类需求作为与严格模式的冲突报告给用户。不要为了绕开而放宽实现或验收专家的派工。需要提交或发布时，请在未启用本插件的会话或 profile 中，或在 DSH 之外，审阅专家报告后进行。
+通过设置页切换严格模式，或在 `dsh-team` 的配置中设置 `coordinatorMode: strict`。开启时，主代理的工具调用受 [允许列表](../src/policy.mjs) 限制；关闭后不再施加这项限制。两种模式下专家的派工检查都有效。若在严格模式下卸载，主代理仍受限，也不能创建新专家，直到重启会话。
 
 安装或修改白名单后的验收步骤（先设置 `coordinatorMode: strict`；默认 `off` 时改为确认主代理仍可直接读文件、运行命令）：
 

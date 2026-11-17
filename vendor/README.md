@@ -11,8 +11,10 @@
 | [@deepseek-ai/dsh-experimental-tool-agent-team](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/experimental/tool-agent-team) | [tool-agent-team.mjs](tool-agent-team.mjs)：供模型调用的 Team 工具 |
 | [@deepseek-ai/dsh-tool-subagent](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/subagent/tool-subagent) | [tool-subagent.mjs](tool-subagent.mjs) 和 [list-models-l-21_ZpK.mjs](list-models-l-21_ZpK.mjs)：模型选择与发现 |
 
-本项目增加五类专家的模型偏好、显式模型与推理等级选择、授权校验和启动前预检；回移补丁保存在 [model-routing.patch](model-routing.patch)，SHA256 为 `834d0eba572af9dc30f602970c2f8965b7da414027dbf45c795927fe0cc73c31`。此外，[tool-agent-team.mjs](tool-agent-team.mjs) 还直接增加了模型偏好摘要（`describeModelPreferences`，写入 `spawn_teammate` 说明）和未授权偏好的报错提示；这两处改动不在该补丁中。
+本项目增加五类专家的模型偏好、显式模型与推理等级选择、授权校验和启动前预检；回移补丁保存在 [model-routing.patch](model-routing.patch)，SHA256 为 `834d0eba572af9dc30f602970c2f8965b7da414027dbf45c795927fe0cc73c31`。此外，[tool-agent-team.mjs](tool-agent-team.mjs) 还直接增加了模型偏好摘要（`describeModelPreferences`，在组装主代理提示词时通过 `team:model-preferences` 提供）和未授权偏好的报错提示；这些后续改动不在该补丁中。
 
 独立插件另有两处改动：Team 服务在创建成员前保存派工记录；Team 工具通过 [spawn.mjs](../src/spawn.mjs) 校验结构化派工。分工规则与权限检查位于 [src/](../src/)，无需改动已安装的 DSH 文件。
 
 升级上游代码后，需重新验证服务组合、工具参数和成员恢复。
+
+**Source note (English):** The linked upstream files retain their MIT license; original modifications use Apache-2.0. The routing patch is a historical backport, not a complete diff of the bundled files. Current model preferences are provided in the lead’s `team:model-preferences` context.

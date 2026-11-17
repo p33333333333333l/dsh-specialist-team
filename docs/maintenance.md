@@ -10,13 +10,7 @@ The supported baseline is DSH `0.2.1-rc.3`. Before supporting another release, v
 
 ## Verification
 
-On 2026-11-18, `npm test` (which runs `node --test test/*.test.mjs`) passed all 22 tests on `main`. They cover structured assignments, path and symlink checks, misleading extra path arguments, exact verification commands and their first-request context, malformed saved records, fresh/fork requests, cold recovery, a missing Lead, plugin unload, and cleanup after a failed write, plus the strict coordinator cases and the configuration cases.
-
-The 22 tests include the policy cases (allowlist matrix in `test/policy.test.mjs`) and integration cases for `coordinatorMode`: strict guard behavior, the default (`off`) lead being unrestricted with the lenient prompt, rejection of an invalid mode, and the model preference summary shown in the `spawn_teammate` description (in `test/integration.test.mjs`). Manual acceptance in the desktop app has not been run: neither a specialist starting on its configured model nor steps 2–5 under "Strict coordinator mode".
-
-Integration tests use real Cordis, AgentLoop, tool dispatch, and JSONL storage with a local mock model. They make no remote model calls.
-
-Before strict coordinator mode existed, when the suite had 11 tests, a separate live-model check created a verifier using `huanling-deepseek/deepseek-v4.1-flash-1017` with `medium` reasoning effort. Its saved descriptor recorded that route and effort. The member received its role, working directory, and exact command list. An attempt to append an unauthorized command was rejected; the assigned command then passed all 11 tests and the member reported to the Lead. This check did not cover every interaction after a full desktop restart.
+Run `npm test`. Policy tests check tool, path and command limits; integration tests use a local mock model for assignments, recovery and live updates. Client tests cover autosave, conflicts, disconnects and bilingual controls. These checks do not verify desktop restart, sign-in or live provider calls.
 
 ## Installation checks
 
@@ -29,6 +23,7 @@ After installing or upgrading, check these states in the plugin page:
 | `agent-team`, `tool-agent-team` | Disabled | Original Team service and tools replaced by this plugin |
 | `tool-subagent`, `tool-subagent-fork` | Disabled | Ordinary subagent entry points |
 | `ui-agent-team` | Enabled and running | Upstream Team interface retained by this plugin |
+| `subagent-model-selection-settings` | Loaded | The default tools configuration requires this service to initialize. To use preferences, enable model selection and authorize the provider/model pairs. |
 | `dsh-team-service`, `dsh-team-tools`, `dsh-team` | Enabled and running | This plugin's Team service, tools, and delegation policy |
 
 These component IDs were `specialist-team-service`, `specialist-team-tools` and `specialist-team` before 2026-11-18. If your profile's `cordis.patch.yml` still uses the old IDs, rename them; entries with unknown IDs are not applied to the new components.
@@ -66,13 +61,7 @@ A recovered member keeps its saved assignment and model settings. If the Lead is
 
 ## Strict coordinator mode
 
-Strict mode is opt-in: `coordinatorMode: strict` in the `config` of the `id: dsh-team` entry (`Config` in `src/index.mjs`, default `off`; any other value throws `specialist-team: coordinatorMode must be one of off, strict`). With `off` the Lead guard is not installed and the lenient routing prompt (`routingPrompt('off')` in `src/prompts.mjs`) is used. Specialist assignment checks apply in both modes.
-
-The Lead guard in `src/index.mjs` calls `leadToolDenial` from `src/policy.mjs` before each Lead tool runs. `COORDINATOR_TOOLS` is an exact-name list with no prefix or wildcard grants. Unknown, renamed and newly added tools are denied until someone reviews the list and the test matrix. `decompress` is allowed only without `toFile` or `imageRef`, since those write files or images. The Lead is also presented with native tools, so a PTC host does not give it `run_code`.
-
-The guard is registered before the routing prompt and its disposer is deliberately kept out of the unload cleanup. After the policy is unloaded the Lead keeps the same allowlist and additionally cannot call `spawn_teammate`, because members created then would have no assignment limits. Restart the Lead session to spawn again. Specialists and older members without assignments use their own paths and are not affected by the Lead guard.
-
-Integrating, committing and publishing remain Lead-role duties, but neither the Lead nor any specialist has a tool for them in this mode. The Lead reports such a request to the user as a conflict with strict mode. Do not widen engineer or verifier assignments to work around it. To commit or publish, use a session or profile without this plugin, or do it outside DSH, after reviewing the specialists' reports.
+Use the settings switch or set `coordinatorMode: strict` on `dsh-team`. While on, the lead is subject to the [tool allowlist](../src/policy.mjs). Turning it off lifts this restriction; specialist assignment checks apply in both modes. Unloading while strict leaves the lead restricted and unable to spawn until the session restarts.
 
 Acceptance steps after installing or changing the allowlist (set `coordinatorMode: strict` first; with the default `off`, confirm instead that the Lead can still read files and run commands directly):
 

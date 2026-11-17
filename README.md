@@ -1,89 +1,59 @@
 # DSH Specialist Team
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+English | [简体中文](README.zh-CN.md)
 
-The lead assigns work to specialists, each with its own scope, tools and optionally its own model. Delegation rules load automatically; no skill activation is needed. An optional [strict coordinator mode](#strict-coordinator-mode) (off by default) restricts the lead to dispatching only.
-
-Built on DeepSeek's [@deepseek-ai/dsh-experimental-agent-team-profile](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/experimental/agent-team-profile). This plugin adds specialist assignments, model preferences, and tool restrictions. See [source details](vendor/README.md).
-
-## Specialists
-
-| Specialist | Job |
-| --- | --- |
-| Designer | UI decisions and assigned UI changes |
-| Researcher | Read-only research |
-| Engineer | Code and assigned tests; does not run checks |
-| Architect | Read-only architecture and diagnosis |
-| Verifier | Independent checks using approved commands |
-
-By default (`coordinatorMode: off`) the lead keeps all its tools. It does local, known, easily checked work itself and uses a specialist for a concrete expertise gap, an independent check, or work with several independent parts. It chooses the team, assigns file and tool access, and hands each delivery to a reviewer. Specialists cannot delegate, commit, integrate or publish.
-
-## Strict coordinator mode
-
-Off by default. Set `coordinatorMode: strict` in the `config` of the `id: dsh-team` entry (see [Configuration](#configuration)) to enable it. The lead then only dispatches, coordinates, asks you questions and summarizes, and every actual task, even a single file read, goes to a fresh specialist. The lead's tool calls pass an exact-name allowlist before they run; everything else is blocked, including file reads, search, edits, shell, git, web, browser and MCP tools, session lookups, `subagent`, `subagent_fork`, `workflow`, `run_code` and scheduling. Unknown or newly added tools are blocked until the list is reviewed.
-
-| Group | Allowed tools |
-| --- | --- |
-| Dispatch and team | `spawn_teammate`, `list_subagent_models`, `list_agents`, `send_message`, `interrupt_agent`, `wait_agent`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update` |
-| Asking and planning | `ask_user_question`, `todo_write`, `create_goal`, `get_goal`, `update_goal`, `exit_plan_mode`, `skill` |
-| Context and jobs | `compress`, `decompress` (without `toFile` or `imageRef`), `search_context`, `acp_status`, `acp_cache`, `job_list`, `job_output`, `job_kill` |
-| Delivering | `present` |
-
-Integrating changes, committing and publishing stay with the lead role, but the lead has no tool for them in this mode and specialists may not do them either. The lead reports such a request to you as a conflict with strict mode and asks how to proceed; it does not widen engineer or verifier permissions.
-
-The guard stays in force after the plugin is unloaded, and the lead can no longer spawn members until the session is restarted. Older members without an assignment keep their original behavior.
+The lead can handle simple tasks directly or assign work to specialists with defined responsibilities, file access and tools. Delegation rules load with the plugin; no skill activation is needed.
 
 ## Install
 
-Requires DSH `0.2.1-rc.3`, Node.js 22+, and the upstream Agent Team profile linked above. Other DSH versions are untested.
+Requires DSH `0.2.1-rc.3`, Node.js 22+, and the [upstream Agent Team profile](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3/packages/experimental/agent-team-profile). Other DSH versions are untested.
 
-1. Clone this repository. Add `"dsh-specialist-team": "link:/absolute/path/to/dsh-specialist-team"` to your DSH profile's dependencies.
-2. Add `dsh-specialist-team` to `dsh.profile.bundles`, install the dependencies, and reload DSH.
-3. Confirm that `spawn_teammate` includes `specialist` and `assignment`, then check the component states as described in [Avoid plugin conflicts](#avoid-plugin-conflicts) and [installation checks](docs/maintenance.md#installation-checks).
+1. Clone this repository. Add `"dsh-specialist-team": "link:/absolute/path/to/dsh-specialist-team"` to your DSH profile's dependencies, using the absolute path of your checkout.
+2. Add `dsh-specialist-team` to `dsh.profile.bundles`, install the profile dependencies and reload DSH.
+3. Use the [installation checklist](docs/maintenance.md#installation-checks) on the plugins page. Specialist Team keeps the original Team interface and replaces its service and tools. `spawn_teammate` should now include `specialist` and `assignment`.
 
-This replaces the Team service and tools, retains the Team interface, and disables ordinary subagent entry points. Members inherit the lead's model unless you configure model preferences, see [Configuration](#configuration).
+## Specialists
 
-## Avoid plugin conflicts
+| Specialist | Work |
+| --- | --- |
+| Designer | Designs layouts and interactions and makes assigned UI changes |
+| Researcher | Finds sources and checks evidence without editing files |
+| Engineer | Implements features and writes tests without running checks |
+| Architect | Diagnoses problems and compares designs without editing files |
+| Verifier | Independently checks results and runs only approved commands |
 
-Check these components on the plugin page after installing, and again after enabling any other plugin:
+For independent review, the lead assigns the check to someone other than the implementer. Specialists cannot delegate. Integration, commits and publishing are the lead's responsibility. Tool restrictions apply to registered tool calls; they are not an OS sandbox. Review what a command and its child processes can affect before approving it.
 
-| Component ID | Keep | Why |
-| --- | --- | --- |
-| `agent-team`, `tool-agent-team` | Disabled | The original Team service and tools register the same `agentTeams` service and tool names (`spawn_teammate`, `send_message` and others). Running both causes errors on the original components. |
-| `tool-subagent`, `tool-subagent-fork` | Disabled | The built-in `subagent` and `subagent_fork` tools skip specialist assignments, tool limits and the model preferences below. Subagents they start inherit the main session's model. |
-| `ui-agent-team` | Enabled | The Team interface this plugin still uses. |
-| `subagent-model-selection-settings` | Enabled, with `enabled: true` and every model you use in `allowedModels` | `dsh-team-tools` reads the authorized models from it when `modelSelectionSettings: true`. Without it, model preferences and `list_subagent_models` are unavailable. |
-| `dsh-team-service`, `dsh-team-tools`, `dsh-team` | Enabled | This plugin. |
+## Set specialist models
 
-This plugin's `cordis.patch.yml` disables the four components above by default, but a later `disabled: false` in your profile's own `cordis.patch.yml` turns them back on. Also do not enable another plugin that provides its own Team or subagent dispatch tools or replaces the `agentTeams` service. Such a plugin could register tools with the same names or bypass the specialist checks. See [troubleshooting](docs/maintenance.md#original-team-component-errors-or-member-creation-failures) for the fix.
+In the plugin manager, open **Specialist Team → Specialist model settings**. Specialists without a preference inherit the lead's model by default.
 
-## Configuration
+- After changing the provider, select a model. The existing preference stays in effect until then. Choosing a model, changing its reasoning effort, or clearing the preference saves automatically. Only new members use the change.
+- Model selection requires a provider/model pair authorized for the session. This page does not grant access. For authorization errors, check `enabled` and `allowedModels` in the subagent model selection settings. Choose an effort supported by the selected model.
 
-Settings go in the profile's `cordis.patch.yml`. Both are optional.
+## Strict coordinator mode
+
+The same settings page has a strict coordinator switch, off by default. The lead can still assign tasks and track progress, but fewer tools are available to it directly. Turn the switch off if the lead needs a tool blocked by this mode, or perform the operation yourself.
+
+Switching affects subsequent tool calls and does not interrupt operations already under way. Before unloading the plugin, turn strict mode off. Otherwise the current lead remains restricted and cannot create members until its session is restarted.
+
+## Manual configuration (optional)
+
+You can also edit the profile's `cordis.patch.yml`. Replace the placeholders with a provider and model ID authorized for your session:
 
 ```yaml
-- id: dsh-team
-  config:
-    coordinatorMode: strict   # off (default) | strict
 - id: dsh-team-tools
   config:
     modelSelectionSettings: true
     models:
-      researcher: { provider: huanling-deepseek, model: deepseek-v4.1-flash, reasoningEffort: high }
-      engineer: { provider: huanling-cc-kiro-power, model: claude-sonnet-5-5, reasoningEffort: high }
-      verifier: { provider: huanling-gpt-pro, model: gpt-6.1-sol, reasoningEffort: medium }
+      researcher: { provider: YOUR_PROVIDER, model: YOUR_MODEL }
+- id: dsh-team
+  config:
+    coordinatorMode: 'off'  # off | strict
 ```
 
-- `coordinatorMode` on `id: dsh-team`: `off` (default) or `strict`. Any other value fails at load.
-- `models` on `id: dsh-team-tools`: one preference per specialist (`designer`, `researcher`, `engineer`, `architect`, `verifier`) with `provider`, `model` and optional `reasoningEffort`. A specialist without an entry inherits the lead's model. Each pair must be authorized for the session (for example in `subagent-model-selection-settings.allowedModels`), and `reasoningEffort` must be a level the model supports; otherwise `spawn_teammate` fails with a hint instead of switching models.
-- With `modelSelectionSettings: true`, the configured preferences are listed in the `spawn_teammate` description, so the lead sees them. The lead omits `provider` and `model` to use the preference, and passes them only when you ask for a model or the task needs a different one.
+`models` accepts `designer`, `researcher`, `engineer`, `architect` and `verifier`. Each entry may include `reasoningEffort`. Both `models` and `coordinatorMode` update live. Saving from the settings page can remove comments in the affected YAML block. Changes to `interrupt`, `freshProvider`, `forkProvider` or `modelSelectionSettings` restart the tools plugin.
 
-## Limits
+## Maintenance and license
 
-Tool restrictions, including the lead's allowlist in strict mode, are not an OS sandbox. They check registered tool calls only; approved commands and recursive searches can reach beyond assigned files, so review commands before granting access. The lead's allowlist does not stop a specialist's approved commands from having side effects. The model remains responsible for delegation decisions and work quality.
-
-For tests, recovery, and uninstall instructions, see [maintenance](docs/maintenance.md).
-
-## License
-
-Original contributions to this project are licensed under [Apache-2.0](LICENSE). Bundled upstream DeepSeek Harness code retains its [MIT license](vendor/LICENSE-MIT); our original changes to that code use Apache-2.0. The package declares `Apache-2.0 AND MIT` because both licenses apply to their respective portions, not as alternatives. See [NOTICE](NOTICE) and [source details](vendor/README.md) for attribution and scope.
+See [maintenance](docs/maintenance.md) for component conflicts, tests, session recovery and uninstall steps. Original contributions use [Apache-2.0](LICENSE); bundled upstream code retains its [MIT license](vendor/LICENSE-MIT). See [source details](vendor/README.md) and [NOTICE](NOTICE) for attribution and scope.
