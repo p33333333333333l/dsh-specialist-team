@@ -349,7 +349,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
 					assertAllowedModelSelection(policy, parentOptions, agentOptions, modelRequest);
 				} catch (error) {
 					if (!usingPreference) throw error;
-					throw new Error(`${error.message}. The configured ${args.specialist} preference (${preference.provider}/${preference.model}) is not authorized; ask the user to fix config.models on specialist-team-tools or authorize the model, or pass an authorized provider/model explicitly.`, { cause: error });
+					throw new Error(`${error.message}. The configured ${args.specialist} preference (${preference.provider}/${preference.model}) is not authorized; ask the user to fix config.models on dsh-team-tools or authorize the model, or pass an authorized provider/model explicitly.`, { cause: error });
 				}
 				const transport = context === "fork" ? config.forkProvider : config.freshProvider;
 				if (hasDelegationModelRequest(modelRequest)) {

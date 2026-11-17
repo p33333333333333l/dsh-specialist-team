@@ -29,9 +29,11 @@
 | `agent-team`、`tool-agent-team` | 停用 | 已由本插件替换的原版团队服务与工具 |
 | `tool-subagent`、`tool-subagent-fork` | 停用 | 普通子代理入口 |
 | `ui-agent-team` | 启用且正常运行 | 保留使用的上游团队界面 |
-| `specialist-team-service`、`specialist-team-tools`、`specialist-team` | 启用且正常运行 | 本插件的团队服务、工具和分工策略 |
+| `dsh-team-service`、`dsh-team-tools`、`dsh-team` | 启用且正常运行 | 本插件的团队服务、工具和分工策略 |
 
-`specialist-team-tools` 的 `config.models` 偏好须使用当前授权的 provider/model 组合。授权变化后需同步调整偏好；无效选择会报错，不会自动换模型。曾出现过这类故障：偏好写了已下线的模型 id `deepseek-v4.1-flash-1017`，`spawn_teammate` 被拒绝，主代理随后给所有成员自选了自己的模型。现在报错信息会指出 `specialist-team-tools` 的 `config.models`。推理等级也必须是模型支持的值，例如 `claude-sonnet-5-5` 只支持 `off`、`high`、`xhigh`。
+这三个组件 ID 在 2026-11-18 之前叫 `specialist-team-service`、`specialist-team-tools` 和 `specialist-team`。如果 profile 的 `cordis.patch.yml` 仍使用旧 ID，请改成新 ID；沿用旧 ID 的条目不会作用于新组件。
+
+`dsh-team-tools` 的 `config.models` 偏好须使用当前授权的 provider/model 组合。授权变化后需同步调整偏好；无效选择会报错，不会自动换模型。曾出现过这类故障：偏好写了已下线的模型 id `deepseek-v4.1-flash-1017`，`spawn_teammate` 被拒绝，主代理随后给所有成员自选了自己的模型。现在报错信息会指出 `dsh-team-tools` 的 `config.models`。推理等级也必须是模型支持的值，例如 `claude-sonnet-5-5` 只支持 `off`、`high`、`xhigh`。
 
 ### 原版团队组件报错或成员创建异常
 
@@ -64,7 +66,7 @@
 
 ## 严格协调模式
 
-严格模式需主动启用：在 `id: specialist-team` 条目的 `config` 中设置 `coordinatorMode: strict`（`src/index.mjs` 的 `Config`，默认 `off`；其他值会抛出 `specialist-team: coordinatorMode must be one of off, strict`）。`off` 时不安装主代理 guard，使用宽松路由提示词（`src/prompts.mjs` 的 `routingPrompt('off')`）。两种模式下专家的派工检查都生效。
+严格模式需主动启用：在 `id: dsh-team` 条目的 `config` 中设置 `coordinatorMode: strict`（`src/index.mjs` 的 `Config`，默认 `off`；其他值会抛出 `specialist-team: coordinatorMode must be one of off, strict`）。`off` 时不安装主代理 guard，使用宽松路由提示词（`src/prompts.mjs` 的 `routingPrompt('off')`）。两种模式下专家的派工检查都生效。
 
 `src/index.mjs` 中的主代理 guard 在主代理每次调用工具前，调用 `src/policy.mjs` 的 `leadToolDenial`。`COORDINATOR_TOOLS` 是按名称精确匹配的列表，不支持前缀或通配符。未知、改名和新增的工具一律拒绝，直到有人审核该列表和测试矩阵。`decompress` 只有在不带 `toFile` 和 `imageRef` 时才允许，因为这两个参数会写文件或图片。主代理同时使用原生工具展示，PTC 宿主不会给它 `run_code`。
 

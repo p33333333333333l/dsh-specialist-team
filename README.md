@@ -20,7 +20,7 @@ By default (`coordinatorMode: off`) the lead keeps all its tools. It does local,
 
 ## Strict coordinator mode
 
-Off by default. Set `coordinatorMode: strict` in the `config` of the `id: specialist-team` entry (see [Configuration](#configuration)) to enable it. The lead then only dispatches, coordinates, asks you questions and summarizes, and every actual task, even a single file read, goes to a fresh specialist. The lead's tool calls pass an exact-name allowlist before they run; everything else is blocked, including file reads, search, edits, shell, git, web, browser and MCP tools, session lookups, `subagent`, `subagent_fork`, `workflow`, `run_code` and scheduling. Unknown or newly added tools are blocked until the list is reviewed.
+Off by default. Set `coordinatorMode: strict` in the `config` of the `id: dsh-team` entry (see [Configuration](#configuration)) to enable it. The lead then only dispatches, coordinates, asks you questions and summarizes, and every actual task, even a single file read, goes to a fresh specialist. The lead's tool calls pass an exact-name allowlist before they run; everything else is blocked, including file reads, search, edits, shell, git, web, browser and MCP tools, session lookups, `subagent`, `subagent_fork`, `workflow`, `run_code` and scheduling. Unknown or newly added tools are blocked until the list is reviewed.
 
 | Group | Allowed tools |
 | --- | --- |
@@ -48,10 +48,10 @@ This replaces the Team service and tools, retains the Team interface, and disabl
 Settings go in the profile's `cordis.patch.yml`. Both are optional.
 
 ```yaml
-- id: specialist-team
+- id: dsh-team
   config:
     coordinatorMode: strict   # off (default) | strict
-- id: specialist-team-tools
+- id: dsh-team-tools
   config:
     modelSelectionSettings: true
     models:
@@ -60,8 +60,8 @@ Settings go in the profile's `cordis.patch.yml`. Both are optional.
       verifier: { provider: huanling-gpt-pro, model: gpt-6.1-sol, reasoningEffort: medium }
 ```
 
-- `coordinatorMode` on `id: specialist-team`: `off` (default) or `strict`. Any other value fails at load.
-- `models` on `id: specialist-team-tools`: one preference per specialist (`designer`, `researcher`, `engineer`, `architect`, `verifier`) with `provider`, `model` and optional `reasoningEffort`. A specialist without an entry inherits the lead's model. Each pair must be authorized for the session (for example in `subagent-model-selection-settings.allowedModels`), and `reasoningEffort` must be a level the model supports; otherwise `spawn_teammate` fails with a hint instead of switching models.
+- `coordinatorMode` on `id: dsh-team`: `off` (default) or `strict`. Any other value fails at load.
+- `models` on `id: dsh-team-tools`: one preference per specialist (`designer`, `researcher`, `engineer`, `architect`, `verifier`) with `provider`, `model` and optional `reasoningEffort`. A specialist without an entry inherits the lead's model. Each pair must be authorized for the session (for example in `subagent-model-selection-settings.allowedModels`), and `reasoningEffort` must be a level the model supports; otherwise `spawn_teammate` fails with a hint instead of switching models.
 - With `modelSelectionSettings: true`, the configured preferences are listed in the `spawn_teammate` description, so the lead sees them. The lead omits `provider` and `model` to use the preference, and passes them only when you ask for a model or the task needs a different one.
 
 ## Limits

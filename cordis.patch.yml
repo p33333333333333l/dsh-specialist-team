@@ -7,14 +7,14 @@
 - id: tool-subagent-fork
   disabled: true
 - insert:
-    - id: specialist-team-service
+    - id: dsh-team-service
       name: dsh-specialist-team/team
       config:
         maxMembers: 8
         maxTasks: 256
         maxMessageBytes: 65536
         disposalTimeoutMs: 5000
-    - id: specialist-team-tools
+    - id: dsh-team-tools
       name: dsh-specialist-team/tools
       config:
         interrupt: true
@@ -24,7 +24,7 @@
         # Optional per-specialist model preferences; each pair must be authorized:
         # models:
         #   researcher: { provider: <provider>, model: <model>, reasoningEffort: high }
-    - id: specialist-team
+    - id: dsh-team
       name: dsh-specialist-team
       # Optional: strict coordinator mode (default off)
       # config:

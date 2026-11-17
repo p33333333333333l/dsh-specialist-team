@@ -20,7 +20,7 @@
 
 ## 严格协调模式
 
-默认关闭。在 `id: specialist-team` 条目的 `config` 中设置 `coordinatorMode: strict` 启用（见[配置](#配置)）。启用后主代理只负责派工、协调、向你提问和汇总，每项实际任务，哪怕只读一个文件，都交给全新的专家。主代理的每次工具调用在执行前都要通过按名称精确匹配的白名单，其余一律拦截，包括读文件、搜索、编辑、shell、git、网页、浏览器和 MCP 工具、会话检索、`subagent`、`subagent_fork`、`workflow`、`run_code` 和定时任务。未知或新增的工具在白名单审核前同样被拦截。
+默认关闭。在 `id: dsh-team` 条目的 `config` 中设置 `coordinatorMode: strict` 启用（见[配置](#配置)）。启用后主代理只负责派工、协调、向你提问和汇总，每项实际任务，哪怕只读一个文件，都交给全新的专家。主代理的每次工具调用在执行前都要通过按名称精确匹配的白名单，其余一律拦截，包括读文件、搜索、编辑、shell、git、网页、浏览器和 MCP 工具、会话检索、`subagent`、`subagent_fork`、`workflow`、`run_code` 和定时任务。未知或新增的工具在白名单审核前同样被拦截。
 
 | 类别 | 允许的工具 |
 | --- | --- |
@@ -48,10 +48,10 @@
 配置写在 profile 的 `cordis.patch.yml` 中，两项都可选。
 
 ```yaml
-- id: specialist-team
+- id: dsh-team
   config:
     coordinatorMode: strict   # off (default) | strict
-- id: specialist-team-tools
+- id: dsh-team-tools
   config:
     modelSelectionSettings: true
     models:
@@ -60,8 +60,8 @@
       verifier: { provider: huanling-gpt-pro, model: gpt-6.1-sol, reasoningEffort: medium }
 ```
 
-- `id: specialist-team` 的 `coordinatorMode`：`off`（默认）或 `strict`；其他值会在加载时报错。
-- `id: specialist-team-tools` 的 `models`：按专家（`designer`、`researcher`、`engineer`、`architect`、`verifier`）各配一项，包含 `provider`、`model` 和可选的 `reasoningEffort`。未配置的专家继承主代理的模型。每个组合都必须在当前会话中获得授权（例如列入 `subagent-model-selection-settings.allowedModels`），`reasoningEffort` 必须是该模型支持的等级；否则 `spawn_teammate` 会报错并给出提示，不会自动换模型。
+- `id: dsh-team` 的 `coordinatorMode`：`off`（默认）或 `strict`；其他值会在加载时报错。
+- `id: dsh-team-tools` 的 `models`：按专家（`designer`、`researcher`、`engineer`、`architect`、`verifier`）各配一项，包含 `provider`、`model` 和可选的 `reasoningEffort`。未配置的专家继承主代理的模型。每个组合都必须在当前会话中获得授权（例如列入 `subagent-model-selection-settings.allowedModels`），`reasoningEffort` 必须是该模型支持的等级；否则 `spawn_teammate` 会报错并给出提示，不会自动换模型。
 - 设置 `modelSelectionSettings: true` 后，已配置的偏好会写入 `spawn_teammate` 的说明，主代理能直接看到。主代理省略 `provider` 和 `model` 即使用偏好，只有你指定模型或任务确有需要时才显式传入。
 
 ## 使用边界

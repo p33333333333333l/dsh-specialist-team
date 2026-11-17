@@ -29,9 +29,11 @@ After installing or upgrading, check these states in the plugin page:
 | `agent-team`, `tool-agent-team` | Disabled | Original Team service and tools replaced by this plugin |
 | `tool-subagent`, `tool-subagent-fork` | Disabled | Ordinary subagent entry points |
 | `ui-agent-team` | Enabled and running | Upstream Team interface retained by this plugin |
-| `specialist-team-service`, `specialist-team-tools`, `specialist-team` | Enabled and running | This plugin's Team service, tools, and delegation policy |
+| `dsh-team-service`, `dsh-team-tools`, `dsh-team` | Enabled and running | This plugin's Team service, tools, and delegation policy |
 
-Any `config.models` preferences on `specialist-team-tools` must use currently authorized provider/model pairs. If authorization changes, update the preferences; invalid choices fail rather than silently falling back. A real failure of this kind happened when a preference named a retired model id (`deepseek-v4.1-flash-1017`): `spawn_teammate` was rejected, and the lead then picked its own model for every member. The error now names `config.models` on `specialist-team-tools`. Efforts must also be supported by the model, for example `claude-sonnet-5-5` accepts only `off`, `high` and `xhigh`.
+These component IDs were `specialist-team-service`, `specialist-team-tools` and `specialist-team` before 2026-11-18. If your profile's `cordis.patch.yml` still uses the old IDs, rename them; entries with unknown IDs are not applied to the new components.
+
+Any `config.models` preferences on `dsh-team-tools` must use currently authorized provider/model pairs. If authorization changes, update the preferences; invalid choices fail rather than silently falling back. A real failure of this kind happened when a preference named a retired model id (`deepseek-v4.1-flash-1017`): `spawn_teammate` was rejected, and the lead then picked its own model for every member. The error now names `config.models` on `dsh-team-tools`. Efforts must also be supported by the model, for example `claude-sonnet-5-5` accepts only `off`, `high` and `xhigh`.
 
 ### Original Team component errors or member creation failures
 
@@ -64,7 +66,7 @@ A recovered member keeps its saved assignment and model settings. If the Lead is
 
 ## Strict coordinator mode
 
-Strict mode is opt-in: `coordinatorMode: strict` in the `config` of the `id: specialist-team` entry (`Config` in `src/index.mjs`, default `off`; any other value throws `specialist-team: coordinatorMode must be one of off, strict`). With `off` the Lead guard is not installed and the lenient routing prompt (`routingPrompt('off')` in `src/prompts.mjs`) is used. Specialist assignment checks apply in both modes.
+Strict mode is opt-in: `coordinatorMode: strict` in the `config` of the `id: dsh-team` entry (`Config` in `src/index.mjs`, default `off`; any other value throws `specialist-team: coordinatorMode must be one of off, strict`). With `off` the Lead guard is not installed and the lenient routing prompt (`routingPrompt('off')` in `src/prompts.mjs`) is used. Specialist assignment checks apply in both modes.
 
 The Lead guard in `src/index.mjs` calls `leadToolDenial` from `src/policy.mjs` before each Lead tool runs. `COORDINATOR_TOOLS` is an exact-name list with no prefix or wildcard grants. Unknown, renamed and newly added tools are denied until someone reviews the list and the test matrix. `decompress` is allowed only without `toFile` or `imageRef`, since those write files or images. The Lead is also presented with native tools, so a PTC host does not give it `run_code`.
 
