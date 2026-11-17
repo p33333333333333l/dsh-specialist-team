@@ -95,6 +95,27 @@ export function toolDenial(assignment, exec) {
     } catch { return 'Cannot resolve the assigned path safely.'; }
   }
 }
+// Strict coordinator mode: exact names only. Anything not listed, including unknown, renamed or
+// MCP tools, is denied. No prefix or wildcard grants, so new tools stay blocked until reviewed.
+export const COORDINATOR_TOOLS = Object.freeze([
+  'spawn_teammate', 'list_subagent_models', 'list_agents', 'send_message', 'interrupt_agent', 'wait_agent',
+  'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update',
+  'ask_user_question', 'todo_write', 'create_goal', 'get_goal', 'update_goal', 'exit_plan_mode',
+  'compress', 'decompress', 'search_context', 'acp_status', 'acp_cache', 'skill',
+  'job_list', 'job_output', 'job_kill', 'present',
+]);
+const COORDINATOR_SET = new Set(COORDINATOR_TOOLS);
+export function leadToolDenial(exec) {
+  const name = exec?.name;
+  if (typeof name !== 'string' || !COORDINATOR_SET.has(name)) {
+    return `Strict coordinator mode: Lead cannot use ${typeof name === 'string' ? name : 'an unnamed tool'}. Delegate this work to a specialist with spawn_teammate, or ask the user.`;
+  }
+  const args = exec.arguments ?? {};
+  // decompress may write restored content or images to files; Lead keeps it in context only.
+  if (name === 'decompress' && (args.toFile !== undefined || args.imageRef !== undefined)) {
+    return 'Strict coordinator mode: Lead may not write decompressed content or images to files; delegate file work to a specialist.';
+  }
+}
 export function rolePrompt(a) {
   return `You are the ${a.role} specialist. Your assignment is persisted by the specialist-team plugin.\nDeliverable: ${a.deliverable}\nRead paths: ${a.read_paths.join(', ')}\nWrite paths: ${a.write_paths.join(', ') || '(none)'}\nWorking directory: ${a.cwd}\nAllowed tools: ${a.allowed_tools.join(', ')}\nExact check commands (JSON): ${JSON.stringify(a.commands)}\nCheck owner: ${a.reviewer}\nStop when: ${a.stop_when}\nDo only this role's assigned work. Do not delegate, submit commits, push, run unassigned checks, or repair another role's findings. Report completed work, unperformed checks and blockers to Lead, then stop. Tool guards enforce only these registered tool calls; they are not an OS sandbox.`;
 }

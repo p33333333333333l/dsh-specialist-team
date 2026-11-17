@@ -43,6 +43,14 @@ const Config = z.object({
 		verifier: SpecialistModelSchema
 	})
 });
+/** Model-facing summary of per-specialist preferences, so Lead knows which categories already have a default route. */
+function describeModelPreferences(models) {
+	const entries = SPECIALISTS.map((role) => [role, models?.[role]]).filter(([, value]) => value !== void 0);
+	if (entries.length === 0) return "No specialist has a configured model preference; members inherit the Lead route unless provider/model are passed.";
+	const configured = entries.map(([role, value]) => `${role}=${value.provider}/${value.model}${value.reasoningEffort === void 0 ? "" : ` (${value.reasoningEffort})`}`).join(", ");
+	const others = SPECIALISTS.filter((role) => models[role] === void 0);
+	return `Configured model preferences, applied when provider/model are omitted: ${configured}.` + (others.length === 0 ? "" : ` ${others.join(", ")} inherit the Lead route.`);
+}
 /** Model-facing collaboration guidance shared by Lead and teammates. */
 function teamPolicy(interrupt) {
 	return `Agent Teams is available in this session
@@ -277,7 +285,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
 		}));
 		register(scoped.tools.register(defineTool(specialistSpawn({
 			name: "spawn_teammate",
-			description: "Create one named, durable teammate. Only the Team Lead may call this tool." + (selectionEnabled ? " Choose specialist from the task to apply its configured model preference; explicit provider/model choices override it after list_subagent_models discovery." : ""),
+			description: "Create one named, durable teammate. Only the Team Lead may call this tool." + (selectionEnabled ? " Choose specialist from the task to apply its configured model preference; explicit provider/model choices override it after list_subagent_models discovery. " + describeModelPreferences(config.models) : ""),
 			parameters: {
 				name: {
 					type: "string",
@@ -336,7 +344,13 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
 				};
 				const parentOptions = parentAgentOptionsForDelegation(agent);
 				const agentOptions = requestedAgentOptions(parentOptions, void 0, modelRequest, selectionEnabled);
-				assertAllowedModelSelection(policy, parentOptions, agentOptions, modelRequest);
+				const usingPreference = preference !== void 0 && args.provider === void 0 && args.model === void 0;
+				try {
+					assertAllowedModelSelection(policy, parentOptions, agentOptions, modelRequest);
+				} catch (error) {
+					if (!usingPreference) throw error;
+					throw new Error(`${error.message}. The configured ${args.specialist} preference (${preference.provider}/${preference.model}) is not authorized; ask the user to fix config.models on specialist-team-tools or authorize the model, or pass an authorized provider/model explicitly.`, { cause: error });
+				}
 				const transport = context === "fork" ? config.forkProvider : config.freshProvider;
 				if (hasDelegationModelRequest(modelRequest)) {
 					const llm = ctx.get("llm");
@@ -629,4 +643,4 @@ function apply(ctx, config = {}) {
 	}, "tool-team.scopedTools()");
 }
 //#endregion
-export { Config, apply, inject, name };
+export { Config, apply, describeModelPreferences, inject, name };

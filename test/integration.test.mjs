@@ -22,6 +22,7 @@ import Team from '../vendor/agent-team.mjs';
 import * as TeamTools from '../vendor/tool-agent-team.mjs';
 import * as Policy from '../src/index.mjs';
 
+const STRICT = { coordinatorMode: 'strict' };
 class Adapter extends LlmAdapter {
   requests = [];
   async *stream(options) {
@@ -32,7 +33,7 @@ class Adapter extends LlmAdapter {
     });
   }
 }
-async function setup(root, mode = 'native') {
+async function setup(root, mode = 'native', policyConfig = {}) {
   const ctx = new Context();
   for (const plugin of [Agents, Sessions, Projections, Llm, SystemPrompt, Fs]) await ctx.plugin(plugin);
   await ctx.plugin(Tools, { mode });
@@ -44,7 +45,7 @@ async function setup(root, mode = 'native') {
   await ctx.plugin(Fork);
   await ctx.plugin(Team);
   await ctx.plugin(TeamTools);
-  const policyFiber = await ctx.plugin(Policy);
+  const policyFiber = await ctx.plugin(Policy, policyConfig);
   const adapter = new Adapter();
   ctx.llm.registerAdapter(['mock'], adapter);
   return { ctx, adapter, policyFiber };
@@ -214,7 +215,7 @@ test('assignment flush failure settles admitted member and never creates a child
 
 test('specialists use native tools when host default uses PTC', { timeout: 15000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'specialist-ptc-'));
-  const { ctx } = await setup(root, 'ptc');
+  const { ctx } = await setup(root, 'ptc', STRICT);
   try {
     const lead = await ctx.agentLoop.create('ptc-lead', { provider: 'mock', model: 'mock' }, { cwd: root });
     // Programmatic service call avoids requiring a PTC runtime in this fixture.
@@ -227,6 +228,8 @@ test('specialists use native tools when host default uses PTC', { timeout: 15000
     });
     const child = ctx.agents.get(result.member.id);
     assert.equal(ctx.tools.modeFor(child), 'native');
+    // Strict coordinator mode must not leave the Lead with an unrestricted code-execution entry point.
+    assert.equal(ctx.tools.modeFor(lead), 'native');
     const assembled = await ctx.systemPrompt.assemble({ agent: child, scope: child });
     assert.ok(assembled.contexts.some(s => s.text.includes('researcher specialist')));
     assert.ok(!assembled.sections.some(s => s.name === 'tools:ptc-only' && s.text));
@@ -234,4 +237,214 @@ test('specialists use native tools when host default uses PTC', { timeout: 15000
     await ctx.fiber.dispose();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+const FIXTURE_PARAMETERS = {
+  file_path: { type: 'string' }, value: { type: 'string' },
+  blockId: { type: 'string' }, toFile: { type: 'string' }, imageRef: { type: 'string' },
+};
+// Registers side-effect-free tools that count real executions, so a blocked call is proven never to reach its executor.
+function countedTools(ctx, names) {
+  const calls = Object.fromEntries(names.map(name => [name, 0]));
+  for (const name of names) {
+    ctx.tools.register(defineContentToolFixture({
+      name, description: 'Count executions without side effects', parameters: FIXTURE_PARAMETERS,
+      execute: async () => { calls[name]++; return [{ type: 'text', text: 'ran' }]; },
+    }));
+  }
+  return calls;
+}
+const WORK_TOOLS = ['read', 'edit', 'write', 'bash', 'git_commit', 'web_fetch', 'mcp__huashu-chrome__navigate', 'session_search'];
+const COORDINATION_TOOLS = ['todo_write', 'decompress'];
+
+test('strict Lead never executes work tools but still coordinates and spawns', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-coordinator-'));
+  const { ctx } = await setup(root, 'native', STRICT);
+  try {
+    const calls = countedTools(ctx, [...WORK_TOOLS, ...COORDINATION_TOOLS]);
+    const lead = await ctx.agentLoop.create('coordinator-lead', { provider: 'mock', model: 'mock' }, { cwd: root });
+    const prompt = await ctx.systemPrompt.assemble({ agent: lead, scope: lead });
+    const routing = prompt.contexts.find(s => s.name === 'specialist-team:routing');
+    assert.match(routing.text, /Strict coordinator mode/);
+    assert.doesNotMatch(routing.text, /Do local, known, easily checked work directly/);
+    for (const name of WORK_TOOLS) {
+      const denied = await execute(ctx, lead, name, { file_path: join(root, 'x'), value: 'x' });
+      assert.equal(denied.isError, true, name);
+      assert.match(JSON.stringify(denied), /Strict coordinator mode/, name);
+    }
+    for (const name of WORK_TOOLS) assert.equal(calls[name], 0, `${name} executor must never run for Lead`);
+    const todo = await execute(ctx, lead, 'todo_write', { value: 'plan' });
+    assert.equal(todo.isError, false, JSON.stringify(todo));
+    assert.equal(calls.todo_write, 1);
+    const restored = await execute(ctx, lead, 'decompress', { blockId: 'b1' });
+    assert.equal(restored.isError, false, JSON.stringify(restored));
+    assert.equal(calls.decompress, 1);
+    for (const extra of [{ toFile: join(root, 'out.txt') }, { imageRef: 'm00001' }, { imageRef: 'list' }]) {
+      const denied = await execute(ctx, lead, 'decompress', { blockId: 'b1', ...extra });
+      assert.equal(denied.isError, true, JSON.stringify(extra));
+      assert.match(JSON.stringify(denied), /Strict coordinator mode/);
+    }
+    assert.equal(calls.decompress, 1);
+    const spawned = await execute(ctx, lead, 'spawn_teammate', args(root, 'coordinator-reader'));
+    assert.equal(spawned.isError, false, JSON.stringify(spawned));
+    assert.ok(ctx.agentTeams.listMembers(lead).some(m => m.name === 'coordinator-reader'));
+  } finally {
+    await ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Lead guard leaves specialists and legacy teammates without assignments unchanged', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-legacy-'));
+  const { ctx } = await setup(root, 'native', STRICT);
+  try {
+    const calls = countedTools(ctx, ['read', 'bash']);
+    const lead = await ctx.agentLoop.create('legacy-lead', { provider: 'mock', model: 'mock' }, { cwd: root });
+    const spawned = await execute(ctx, lead, 'spawn_teammate', args(root, 'scoped-reader'));
+    assert.equal(spawned.isError, false, JSON.stringify(spawned));
+    const specialist = ctx.agents.get(ctx.agentTeams.listMembers(lead).find(m => m.name === 'scoped-reader').id);
+    const allowed = await execute(ctx, specialist, 'read', { file_path: join(root, 'allowed.txt') });
+    assert.equal(allowed.isError, false, JSON.stringify(allowed));
+    assert.equal(calls.read, 1);
+    const blocked = await execute(ctx, specialist, 'bash', { value: 'ls' });
+    assert.equal(blocked.isError, true);
+    assert.match(JSON.stringify(blocked), /does not allow bash/);
+    assert.equal(calls.bash, 0);
+
+    // A member created through the Team service without an assignment keeps its original behavior.
+    const legacyResult = await ctx.agentTeams.spawnTeammate(lead, {
+      name: 'legacy-worker', description: 'Legacy member', prompt: [{ type: 'text', text: 'Work' }],
+      context: 'fresh', provider: 'spawn', signal: new AbortController().signal,
+    });
+    const legacy = ctx.agents.get(legacyResult.member.id);
+    const assembled = await ctx.systemPrompt.assemble({ agent: legacy, scope: legacy });
+    assert.ok(!assembled.contexts.some(s => s.name === 'specialist-team:routing'));
+    const legacyRun = await execute(ctx, legacy, 'bash', { value: 'ls' });
+    assert.equal(legacyRun.isError, false, JSON.stringify(legacyRun));
+    assert.equal(calls.bash, 1);
+
+    // The Lead stays blocked while the others keep running.
+    for (const name of ['read', 'bash']) {
+      const denied = await execute(ctx, lead, name, { file_path: join(root, 'allowed.txt'), value: 'ls' });
+      assert.equal(denied.isError, true, name);
+      assert.match(JSON.stringify(denied), /Strict coordinator mode/);
+    }
+    assert.equal(calls.read, 1);
+    assert.equal(calls.bash, 1);
+  } finally {
+    await ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('restored Lead is guarded and keeps the coordinator prompt', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-coordinator-restore-'));
+  let current;
+  try {
+    current = await setup(root, 'native', STRICT);
+    const lead = await current.ctx.agentLoop.create('restore-lead', { provider: 'mock', model: 'mock' }, { cwd: root });
+    const spawned = await execute(current.ctx, lead, 'spawn_teammate', args(root, 'restore-reader'));
+    assert.equal(spawned.isError, false, JSON.stringify(spawned));
+    await current.ctx.fiber.dispose();
+    current = await setup(root, 'native', STRICT);
+    const calls = countedTools(current.ctx, ['bash', 'todo_write']);
+    const restored = await current.ctx.agentLoop.resume(current.ctx, {
+      resumeSessionId: 'restore-lead', agentOptions: { provider: 'mock', model: 'mock' },
+    });
+    const prompt = await current.ctx.systemPrompt.assemble({ agent: restored.agent, scope: restored.agent });
+    assert.match(prompt.contexts.find(s => s.name === 'specialist-team:routing').text, /Strict coordinator mode/);
+    const denied = await execute(current.ctx, restored.agent, 'bash', { value: 'ls' });
+    assert.equal(denied.isError, true);
+    assert.match(JSON.stringify(denied), /Strict coordinator mode/);
+    assert.equal(calls.bash, 0);
+    const todo = await execute(current.ctx, restored.agent, 'todo_write', { value: 'plan' });
+    assert.equal(todo.isError, false, JSON.stringify(todo));
+    assert.equal(calls.todo_write, 1);
+  } finally {
+    await current?.ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Lead guard stays fail-closed after the policy plugin unloads', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-coordinator-unload-'));
+  const { ctx, policyFiber } = await setup(root, 'native', STRICT);
+  try {
+    const calls = countedTools(ctx, ['bash', 'read', 'todo_write']);
+    const lead = await ctx.agentLoop.create('unload-lead', { provider: 'mock', model: 'mock' }, { cwd: root });
+    const before = await execute(ctx, lead, 'bash', { value: 'ls' });
+    assert.equal(before.isError, true);
+    await policyFiber.dispose();
+    for (const name of ['bash', 'read']) {
+      const denied = await execute(ctx, lead, name, { file_path: join(root, 'x'), value: 'ls' });
+      assert.equal(denied.isError, true, name);
+      assert.match(JSON.stringify(denied), /Strict coordinator mode/);
+    }
+    assert.equal(calls.bash, 0);
+    assert.equal(calls.read, 0);
+    // Spawning would now create members the unloaded policy cannot restrict, so it is refused too.
+    const spawn = await execute(ctx, lead, 'spawn_teammate', args(root, 'after-unload'));
+    assert.equal(spawn.isError, true);
+    assert.match(JSON.stringify(spawn), /policy was unloaded/);
+    assert.ok(!ctx.agentTeams.listMembers(lead).some(m => m.name === 'after-unload'));
+    const todo = await execute(ctx, lead, 'todo_write', { value: 'plan' });
+    assert.equal(todo.isError, false, JSON.stringify(todo));
+    assert.equal(calls.todo_write, 1);
+  } finally {
+    await ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('default Lead is not restricted and gets the lenient routing prompt', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-default-'));
+  const { ctx } = await setup(root);
+  try {
+    const calls = countedTools(ctx, [...WORK_TOOLS, 'todo_write']);
+    const lead = await ctx.agentLoop.create('default-lead', { provider: 'mock', model: 'mock' }, { cwd: root });
+    const prompt = await ctx.systemPrompt.assemble({ agent: lead, scope: lead });
+    const routing = prompt.contexts.find(s => s.name === 'specialist-team:routing');
+    assert.match(routing.text, /Do local, known, easily checked work directly/);
+    assert.doesNotMatch(routing.text, /Strict coordinator mode/);
+    assert.match(routing.text, /omit provider and model/);
+    for (const name of WORK_TOOLS) {
+      const result = await execute(ctx, lead, name, { file_path: join(root, 'x'), value: 'x' });
+      assert.equal(result.isError, false, `${name}: ${JSON.stringify(result)}`);
+      assert.equal(calls[name], 1, name);
+    }
+    // Specialists keep their scoped guard regardless of the Lead mode.
+    const spawned = await execute(ctx, lead, 'spawn_teammate', args(root, 'default-reader'));
+    assert.equal(spawned.isError, false, JSON.stringify(spawned));
+    const specialist = ctx.agents.get(ctx.agentTeams.listMembers(lead).find(m => m.name === 'default-reader').id);
+    const denied = await execute(ctx, specialist, 'bash', { value: 'ls' });
+    assert.equal(denied.isError, true);
+    assert.match(JSON.stringify(denied), /does not allow bash/);
+    assert.equal(calls.bash, 1);
+  } finally {
+    await ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('explicit off behaves like the default and unknown modes are rejected', { timeout: 15000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'specialist-mode-'));
+  const { ctx } = await setup(root, 'native', { coordinatorMode: 'off' });
+  try {
+    const calls = countedTools(ctx, ['bash']);
+    const lead = await ctx.agentLoop.create('off-lead', { provider: 'mock', model: 'mock' }, { cwd: root });
+    assert.equal((await execute(ctx, lead, 'bash', { value: 'ls' })).isError, false);
+    assert.equal(calls.bash, 1);
+    assert.throws(() => Policy.apply(ctx, { coordinatorMode: 'loose' }), /coordinatorMode must be one of off, strict/);
+  } finally {
+    await ctx.fiber.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('spawn tool description lists configured model preferences', () => {
+  const none = TeamTools.describeModelPreferences(undefined);
+  assert.match(none, /No specialist has a configured model preference/);
+  const some = TeamTools.describeModelPreferences({ researcher: { provider: 'p', model: 'm', reasoningEffort: 'high' }, verifier: { provider: 'q', model: 'n' } });
+  assert.match(some, /researcher=p\/m \(high\), verifier=q\/n\./);
+  assert.match(some, /designer, engineer, architect inherit the Lead route/);
 });

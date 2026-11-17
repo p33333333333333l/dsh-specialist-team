@@ -21,5 +21,11 @@
         freshProvider: spawn
         forkProvider: fork
         modelSelectionSettings: true
+        # Optional per-specialist model preferences; each pair must be authorized:
+        # models:
+        #   researcher: { provider: <provider>, model: <model>, reasoningEffort: high }
     - id: specialist-team
       name: dsh-specialist-team
+      # Optional: strict coordinator mode (default off)
+      # config:
+      #   coordinatorMode: strict
