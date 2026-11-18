@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Collaboration tools</title>
+  <g fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 32h10c10 0 10-17 22-17h14m-8-8 8 8-8 8" stroke="#34699a"/>
+    <path d="M19 32c10 0 10 17 22 17h14m-8-8 8 8-8 8" stroke="#15796e"/>
+  </g>
+  <circle cx="9" cy="32" r="6" fill="#ad581f"/>
+</svg>

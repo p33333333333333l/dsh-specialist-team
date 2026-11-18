@@ -9,6 +9,8 @@
     "./client": "./client.js",
     "./team": "./vendor/agent-team.mjs",
     "./tools": "./vendor/tool-agent-team.mjs",
+    "./team/icon": "./docs/team-service-icon.svg",
+    "./tools/icon": "./docs/team-tools-icon.svg",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json",
     "./team/locale/*.json": "./locale/team/*.json",
