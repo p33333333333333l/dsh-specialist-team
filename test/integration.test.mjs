@@ -41,7 +41,7 @@ class ReasoningAdapter extends Adapter {
     return Promise.resolve({ provider, id: model, name: model, reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] } });
   }
 }
-async function setup(root, mode = 'native', policyConfig = {}, { toolsConfig, adapter = new Adapter(), allowedModels } = {}) {
+async function setup(root, mode = 'native', policyConfig = {}, { toolsConfig, adapter = new Adapter(), allowedModels, enableTeam = true } = {}) {
   const ctx = new Context();
   for (const plugin of [Agents, Sessions, Projections, Llm, SystemPrompt, Fs]) await ctx.plugin(plugin);
   await ctx.plugin(Tools, { mode });
@@ -51,11 +51,11 @@ async function setup(root, mode = 'native', policyConfig = {}, { toolsConfig, ad
   await ctx.plugin(Subagents);
   await ctx.plugin(Spawn);
   await ctx.plugin(Fork);
-  await ctx.plugin(Team);
+  if (enableTeam) await ctx.plugin(Team);
   // Stands in for the Host's subagent-model-selection-settings service when model selection is enabled.
   if (allowedModels) ctx.provide('subagentModelSelection', { current: () => ({ enabled: true, allowedModels }) });
-  const toolsFiber = await ctx.plugin(TeamTools, toolsConfig);
-  const policyFiber = await ctx.plugin(Policy, policyConfig);
+  const toolsFiber = enableTeam ? await ctx.plugin(TeamTools, toolsConfig) : undefined;
+  const policyFiber = enableTeam ? await ctx.plugin(Policy, policyConfig) : undefined;
   ctx.llm.registerAdapter(['mock'], adapter);
   return { ctx, adapter, policyFiber, toolsFiber };
 }
@@ -432,6 +432,46 @@ test('default Lead is not restricted and gets the lenient routing prompt', { tim
   } finally {
     await ctx.fiber.dispose();
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+for (const mode of ['disabled', 'default', 'strict']) test(`Lead dispatch and argument isolation: ${mode}`, async () => {
+  const cases = [
+    ['bash', { description: 'Show working directory', command: 'pwd' }],
+    ['update_goal', { action: 'complete', goal_id: 'fixture', revision: 5 }],
+  ];
+  {
+    const root = mkdtempSync(join(tmpdir(), 'specialist-no-dispatch-'));
+    const { ctx, adapter } = await setup(root, 'native', mode === 'strict' ? STRICT : {}, { enableTeam: mode !== 'disabled' });
+    try {
+      const lead = await ctx.agentLoop.create('lead', { provider: 'mock', model: 'mock' }, { cwd: root });
+      const seen = [];
+      for (const [name, input] of cases) {
+        const parameters = Object.fromEntries(Object.entries(input).map(([key, value]) => [key, { type: typeof value, required: true }]));
+        for (const [key, type] of Object.entries(name === 'bash' ? { sandbox_permissions: 'string', justification: 'string' } : { objective: 'string', max_goal_rounds: 'number', blocked_reason: 'string' })) parameters[key] = { type };
+        ctx.tools.register(defineContentToolFixture({ name, description: 'Record received arguments', parameters,
+          execute: args => { seen.push([name, { ...args }]); return [{ type: 'text', text: 'ok' }]; },
+        }));
+        const result = await execute(ctx, lead, name, { ...input });
+        const denied = mode === 'strict' && name === 'bash';
+        assert.equal(result.isError, denied, JSON.stringify(result));
+        if (denied) assert.match(JSON.stringify(result), /Strict coordinator mode/);
+      }
+      await setImmediate();
+      assert.deepEqual(seen, mode === 'strict' ? cases.slice(1) : cases);
+      assert.deepEqual(ctx.agents.list().map(agent => agent.id), [lead.id]);
+      assert.equal(adapter.requests.length, 0);
+      if (mode === 'strict') {
+        const spawned = await execute(ctx, lead, 'spawn_teammate', args(root, 'explicit-reader'));
+        assert.equal(spawned.isError, false, JSON.stringify(spawned));
+        const member = ctx.agentTeams.listMembers(lead).find(m => m.name === 'explicit-reader');
+        await spinUntil(() => adapter.requests.some(request => request.sessionId === member.id));
+        assert.deepEqual(adapter.requests.map(request => request.sessionId), [member.id]);
+      }
+    } finally {
+      await ctx.fiber.dispose();
+      rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 

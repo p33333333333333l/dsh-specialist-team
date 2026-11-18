@@ -37,7 +37,7 @@ The screenshot shows the component’s former Chinese label, “专家协作”.
 
 ## Strict coordinator mode
 
-The same settings page has a strict coordinator switch, off by default. The lead can still assign tasks and track progress, but fewer tools are available to it directly. Turn the switch off if the lead needs a tool blocked by this mode, or perform the operation yourself.
+With strict mode off (the default), the Lead can work directly and call specialists as needed. With it on, the Lead only coordinates: even reading a file requires a new specialist. Specialist calls may add to your model bill in either mode.
 
 Switching affects subsequent tool calls and does not interrupt operations already under way. Before unloading the plugin, turn strict mode off. Otherwise the current lead remains restricted and cannot create members until its session is restarted.
 
