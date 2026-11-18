@@ -6,18 +6,16 @@
 
 ## 安装并试用
 
-`0.3.3` 要求 **DSH `0.2.2-rc.4`** 和 **Node.js 22 或更高版本**。[查看 v0.3.3 发行页](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.3)。
-
-1. 把[安装包地址](https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.3/dsh-specialist-team-0.3.3.tgz)复制到 DSH 插件管理器，或运行下面的命令。使用其他配置（profile）时，把 `web` 换成对应的配置名。
+1. 打开[最新发行页](https://github.com/p33333333333333l/dsh-specialist-team/releases/latest)，查看 DSH 和 Node.js 的版本要求。在 **Assets** 下复制 `.tgz` 链接，粘贴到 DSH 插件管理器。用命令行安装时，把 `PACKAGE_URL` 换成该链接。如果你用的是其他配置（profile），也把 `web` 换成对应的配置名。
 
    ```sh
-   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.3/dsh-specialist-team-0.3.3.tgz
+   dsh plugin --profile web add PACKAGE_URL
    ```
 
 2. 如果插件管理器提示有待应用的变更，先重新加载 DSH。打开主会话，开启 **Agent Teams**。
 3. 发送下面这句话试试。研究员启动后，会出现在团队列表里，例如 `researcher-read-docs`。
 
-   > 请让研究员只读项目的 README，告诉我它要求哪个版本的 DSH。
+   > 请让研究员只读项目的 README，用一句话告诉我这个项目是做什么的。
 
 ## 怎么交代任务
 
@@ -50,7 +48,7 @@
 ## 专家没有启动怎么办
 
 - **团队里出现的是普通队友。** 请主代理指定专家角色和任务后重试。Agent Teams 的列表里可以同时有普通队友和专家。
-- **创建时提示模型错误。** 如果选过模型，先检查上面的模型权限。如果没指定模型却提示缺少提供方或模型，检查插件是否已更新到 `0.3.3`，再用默认模型重试。
+- **创建时提示模型错误。** 如果选过模型，先检查上面的模型权限。如果没指定模型却提示缺少提供方或模型，按上面的安装步骤更新插件后再试。
 - **停用插件后，正在工作的专家无法继续使用工具。** 重新启用插件，专家就能按原派工权限继续。
 
 需要直接调用派工工具、手动配置或验证源码时，见[进阶参考](docs/advanced.zh-CN.md)。

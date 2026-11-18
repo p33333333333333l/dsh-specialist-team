@@ -6,18 +6,16 @@ Ask DSH to delegate part of a task to a specialist. For example, have an enginee
 
 ## Install and try it
 
-Version `0.3.3` requires **DSH `0.2.2-rc.4`** and **Node.js 22 or newer**. [View the v0.3.3 release](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.3).
-
-1. Copy the [installation package URL](https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.3/dsh-specialist-team-0.3.3.tgz) into DSH’s plugin manager, or run the command below. Replace `web` if you use a different profile.
+1. Open the [latest release](https://github.com/p33333333333333l/dsh-specialist-team/releases/latest) to check the DSH and Node.js requirements. Under **Assets**, copy the `.tgz` link into DSH’s plugin manager. To install from the command line, replace `PACKAGE_URL` with that link and change `web` if you use a different profile.
 
    ```sh
-   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.3/dsh-specialist-team-0.3.3.tgz
+   dsh plugin --profile web add PACKAGE_URL
    ```
 
 2. Reload DSH if the plugin manager reports a pending change. Open a main conversation and turn on **Agent Teams**.
 3. Send a request like the one below. If a researcher starts, its name appears in the team view, for example `researcher-read-docs`.
 
-   > Ask a researcher to read only the project README and tell me which DSH version it requires.
+   > Ask a researcher to read only the project README and summarize what the project does in one sentence.
 
 ## Tell DSH what to delegate
 
@@ -50,7 +48,7 @@ Turn strict mode off before asking the main agent to integrate changes, commit, 
 ## If a specialist doesn’t start
 
 - **You see an ordinary teammate.** Ask the main agent to retry with a specific specialist role and task. Agent Teams can display ordinary teammates and specialists together.
-- **Creation fails with a model error.** Check the model permissions above if you chose a custom model. If the error mentions a missing provider or model when you didn’t specify one, check that the plugin is on `0.3.3` and retry with the default model.
+- **Creation fails with a model error.** Check the model permissions above if you chose a custom model. If DSH asks for a provider or model when you didn’t specify one, update the plugin using the installation steps above and retry.
 - **An existing specialist stops using tools after the plugin is disabled.** Re-enable the plugin so that it can continue under its original assignment.
 
 For direct tool calls, manual configuration, and source verification, see the [advanced reference](docs/advanced.md).
