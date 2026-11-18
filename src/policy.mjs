@@ -76,22 +76,22 @@ export function assignmentIn(root, memberId) {
     return validated;
   }
 }
-export function toolDenial(assignment, exec) {
+export function toolDenial(assignment, exec, cwd = assignment.cwd) {
   if (!assignment.allowed_tools.includes(exec.name)) return `${assignment.role} assignment does not allow ${exec.name}; report the need to Lead.`;
   const args = exec.arguments ?? {};
   if (exec.name === 'glob' && (typeof args.pattern !== 'string' || isAbsolute(args.pattern) || args.pattern.includes('..'))) return 'Glob patterns must stay relative to the assigned search path.';
   if (exec.name === 'mcp__huashu-chrome__screenshot' && (args.savePath || args.focus)) return 'Specialist screenshots may not write files or take browser focus.';
+  if (args.sandbox_permissions !== undefined && ['edit', 'write', 'bash'].includes(exec.name)) return 'Specialist tools cannot request a different sandbox mode.';
   if (exec.name === 'bash') {
     if (!assignment.commands.includes(args.command)) return 'Only exact check commands assigned by Lead may run.';
     if (args.run_in_background) return 'Assigned checks must run in the foreground.';
-    if (args.sandbox_permissions) return 'Specialist checks cannot request wider permissions.';
   }
   if (['read', 'write', 'edit', 'read_image', 'glob', 'grep', 'bash'].includes(exec.name)) {
     const pathField = exec.name === 'bash' ? 'workdir' : ['glob', 'grep'].includes(exec.name) ? 'path' : 'file_path';
-    const path = args[pathField] ?? assignment.cwd;
+    const path = args[pathField] ?? cwd;
     try {
       const allowed = ['write', 'edit'].includes(exec.name) ? assignment.write_paths : [...assignment.read_paths, ...assignment.write_paths];
-      if (!inside(canonical(path, assignment.cwd), allowed)) return `Path is outside the assigned ${['write','edit'].includes(exec.name) ? 'write' : 'read'} scope.`;
+      if (!inside(canonical(path, cwd), allowed)) return `Path is outside the assigned ${['write','edit'].includes(exec.name) ? 'write' : 'read'} scope.`;
     } catch { return 'Cannot resolve the assigned path safely.'; }
   }
 }

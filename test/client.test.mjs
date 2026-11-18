@@ -597,6 +597,26 @@ test('hub forwards invalidations to open controllers only', async () => {
 });
 
 // ------------------------------------------------------------------ apply(ctx)
+test('model and mode changes sharing dsh-team save against fresh revisions', async () => {
+  const form = makeForm('dsh-team', { models: { researcher: { provider: 'alpha', model: 'm1' } }, coordinatorMode: 'off' });
+  const controller = mod.createController({ models: form, mode: form, loadCatalog: async () => ({ ok: true, value: catalogValue }) });
+  let release;
+  const first = new Promise(resolve => { release = resolve; });
+  form.behavior = async (ops, revision) => {
+    if (form.calls.length === 1) await first;
+    assert.equal(revision, form.getSnapshot().revision);
+    return form.apply(ops);
+  };
+  controller.clear('researcher');
+  const modeChange = controller.setMode('strict');
+  assert.equal(form.calls.length, 1);
+  release();
+  await modeChange;
+  assert.deepEqual(form.calls.map(call => call.revision), [1, 2]);
+  assert.deepEqual(plain(form.getSnapshot().value), { models: {}, coordinatorMode: 'strict' });
+  controller.dispose();
+});
+
 test('only the bundle registers a settings entry', () => {
   const forms = {};
   const events = {};
@@ -624,7 +644,7 @@ test('only the bundle registers a settings entry', () => {
   mod.apply(ctx);
   assert.equal(dictionaries[0].ns, 'specialistTeam.settings');
   assert.deepEqual(Object.keys(dictionaries[0].dicts).sort(), ['en', 'zh']);
-  assert.deepEqual(plain(served), ['dsh-team-tools', 'dsh-team']);
+  assert.deepEqual(plain(served), ['dsh-team']);
   assert.equal(owner, 'plugins.bundle.config');
   assert.equal(registered.length, 1);
   const bundle = registered.find(item => item.options.name === 'plugins.bundle.config');
@@ -736,11 +756,12 @@ test('package.json exposes the browser half and keeps the existing manifest', ()
   assert.ok(!raw.includes('\r'));
   const pkg = JSON.parse(raw);
   assert.equal(pkg.exports['./client'], './client.js');
-  for (const key of ['.', './team', './tools', './package.json', './locale/*.json', './team/locale/*.json', './tools/locale/*.json']) {
-    assert.ok(key in pkg.exports, key);
-  }
+  for (const key of ['.', './package.json', './locale/*.json']) assert.ok(key in pkg.exports, key);
+  assert.ok(!('./team' in pkg.exports));
+  assert.ok(!('./tools' in pkg.exports));
+  assert.ok(!pkg.files.includes('vendor'));
   assert.ok(pkg.files.includes('client.js'));
-  for (const entry of ['src', 'vendor', 'locale', 'docs', 'cordis.patch.yml']) assert.ok(pkg.files.includes(entry), entry);
+  for (const entry of ['src', 'locale/*.json', 'docs', 'cordis.patch.yml']) assert.ok(pkg.files.includes(entry), entry);
   assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml');
   assert.equal(pkg.dsh.client.platform, 'web');
   assert.deepEqual(pkg.dsh.client.inject, [

@@ -1,74 +1,51 @@
 # 维护与验证
 
-[English](maintenance.md) | [简体中文](maintenance.zh-CN.md) · [首页](../README.zh-CN.md)
-
-## 开发
-
-本包直接运行 ESM 源码，无需构建。准备好 DSH 依赖后运行 `npm test`。
-
-当前支持的基线是 DSH `0.2.1-rc.3`。适配其他版本前，需验证实际 Loader 配置组合、工具参数和成员恢复。随包提供的 Team 代码来自该版本，模型路由改动和 MIT 许可见[来源说明](../vendor/README.zh-CN.md)。
-
-## 已有验证
-
-运行 `npm test`。权限测试检查工具、路径和命令范围；集成测试使用本地模拟模型验证派工、恢复和热更新；设置页测试覆盖自动保存、写入冲突、断线和中英文控件。自动化测试不能代替桌面重启、登录和实际提供方调用的验收。
+[English](maintenance.md) | 简体中文 · [首页](../README.zh-CN.md)
 
 ## 安装检查
 
+`0.3.0` 要求 DSH 恰为 `0.2.2-rc.4`，且 Node.js 版本为 22 或更高。安装或升级后，在当前 profile 的插件页检查以下条目。
 
-安装或升级后，在插件页面核对以下状态：
+| 条目 ID | 预期状态 |
+| --- | --- |
+| `agent-team`、`tool-agent-team` | 启用。DSH 提供团队服务和任务板工具。 |
+| `tool-subagent-control`、`tool-subagent`、`tool-subagent-fork` | 保留 DSH 对普通子代理及分组控制的常规配置。 |
+| `ui-agent-team` | 在提供原生团队界面的端上保持启用。在根会话中使用其 **Agent Teams** 开关。 |
+| `subagent-model-selection-settings` | 如需使用自定义模型，在新建根会话前开启模型选择并授权所需的提供方和模型组合。 |
+| `dsh-team` | 启用。专家派工、设置和权限检查由本插件的这一个条目提供。 |
 
-| 组件 ID | 预期状态 | 作用 |
-| --- | --- | --- |
-| `agent-team`、`tool-agent-team` | 停用 | 已由本插件替换的原版团队服务与工具 |
-| `tool-subagent`、`tool-subagent-fork` | 停用 | 普通子代理入口 |
-| `ui-agent-team` | 如需使用此界面，保持启用 | 本插件不会安装原版团队界面 |
-| `subagent-model-selection-settings` | 已加载 | 默认工具配置依赖此服务；缺失时团队工具无法初始化。使用模型偏好还需开启模型选择并授权对应组合。 |
-| `dsh-team-service`、`dsh-team-tools`、`dsh-team` | 启用且正常运行 | 本插件的团队服务、工具和分工策略 |
+保留原生 preset 的工具分组。在根会话中开启 Agent Teams，确认出现 `spawn_teammate`，且必填 `specialist` 和 `assignment`。关闭 Agent Teams 后，专家派工入口应消失。子会话不能派发专家。代理树、通信和任务板均由 DSH 管理。
 
-`dsh-team-tools` 的 `config.models` 偏好须使用当前授权的 provider/model 组合。授权变化后需同步调整偏好；无效选择会报错，不会自动换模型。手动填写 `reasoningEffort` 时，以设置页中当前提供方为该模型列出的档位为准。
+## 从 0.2.x 升级
 
-### 原版团队组件报错或成员创建异常
+1. 在当前 profile 的 `cordis.patch.yml` 中，把 `dsh-team-tools.config.models` 中的模型偏好移到 `dsh-team.config.models` 下，保留 `dsh-team.config.coordinatorMode`。参见[手动配置示例](../README.zh-CN.md#手动配置可选)。
+2. 移除旧的 `dsh-team-tools` 和 `dsh-team-service` 条目或覆盖项。检查 `agent-team`、`tool-agent-team`、`ui-agent-team`、`tool-subagent-control`、`tool-subagent` 和 `tool-subagent-fork`，移除旧版安装所加的 `disabled: true` 覆盖项。若曾为旧版停用原生委派分组，也一并恢复。
+3. 重新加载 DSH，按上表检查条目，然后新建根会话并启用 Agent Teams。旧版替代团队实现创建的会话保留为历史记录，可查阅原日志。旧团队的成员和任务不会迁入原生团队。
 
-本插件的 `cordis.patch.yml` 默认停用上表中的四个原版服务或工具入口，但 profile 自身的 `cordis.patch.yml` 可在之后覆盖这些设置。例如，桌面 profile 中残留的 `disabled: false` 会重新启用原版组件。原版与替代实现会重复注册 `agentTeams` 服务和同名工具；已观察到 `agent-team`、`tool-agent-team` 报错，而团队界面和三个替代组件仍正常运行的情况。
-
-检查当前 profile 的 `cordis.patch.yml`（例如 `~/.dsh/profiles/desktop/cordis.patch.yml`），移除重新启用原版组件的覆盖项，或将其改为停用。本次冲突对应的修复示例：
-
-```yaml
-- id: tool-agent-team
-  disabled: true
-- id: agent-team
-  disabled: true
-```
-
-同时确认 `tool-subagent`、`tool-subagent-fork` 保持停用，如需使用原版团队界面则保持 `ui-agent-team` 启用。不要为了消除原版组件的报错而停用本插件的三个组件。
-
-保存后等待配置热重载，重新核对上表状态，并实际创建一个带 `specialist` 和 `assignment` 的成员、下发任务，确认成员能回复；如果配置未自动加载，再重新加载 DSH。
-
+旧版替代实现及其 MIT 许可归档在源代码仓库的 `vendor/` 目录。`0.3.0` 发行包不包含这份归档。
 
 ## 派工与恢复
 
-每次创建成员都必须提供专家类别和派工信息：交付物、可读写路径、允许工具、验收负责人、停止条件，以及验收专家可执行的原样命令。无效派工会在成员启动前被拒绝。工作开始前，派工先写入主代理日志，再复制到成员日志。
+只有启用了 Agent Teams 的根会话可以调用 `spawn_teammate`。每次派工必须指定专家类别，并在派工信息中填写交付物、读写路径、允许工具、验收负责人和停止条件。需要验收员运行检查时，要给出原样命令。写入路径必须在读取范围内。`context: fresh` 是默认值，选择 `context: fork` 可继承主代理的对话记录。
 
-工具执行前，guard 会检查已注册工具的调用，并解析路径，拒绝直接访问范围外文件。主代理使用 PTC 时，专家使用原生工具，不开放任意代码执行入口。
+无效派工在专家启动前会被拒绝。插件在专家开始工作前将派工信息写入其会话日志，恢复该原生专家会话时会重新加载派工信息。专家在 PTC preset 下也使用原生工具执行器，并通过 DSH 的 `send_message` 向主代理汇报，参数为 `agent: lead`。
 
-这些检查不是操作系统沙箱。递归搜索可能沿链接访问其他位置；获准命令及其子进程可以访问同一系统；文件也可能在检查与执行之间发生变化。主代理仍须审核命令及其副作用。
-
-恢复成员时沿用已保存的派工和模型设置。如果主代理未加载，需先恢复父 Team 会话。卸载策略后，已有成员仍会被拦截，需要重启对应会话。旧的无派工成员保留原有行为。
+权限检查约束已注册工具的调用范围。递归搜索可能沿链接访问其他位置，获准命令可以启动子进程，路径也可能在检查与执行之间发生变化。主代理仍需审核每条验收命令的实际影响。卸载插件会阻止已派工的专家继续调用工具。重新加载插件并重新打开相关会话后，再继续专家任务。
 
 ## 严格协调模式
 
-通过设置页切换严格模式，或在 `dsh-team` 的配置中设置 `coordinatorMode: strict`。开启时，主代理的工具调用受 [允许列表](../src/policy.mjs) 限制；关闭后不再施加这项限制。两种模式下专家的派工检查都有效。若在严格模式下卸载，主代理仍受限，也不能创建新专家，直到重启会话。
+在 `dsh-team` 中设置 `coordinatorMode: strict`，或在专家模型设置页打开开关。启用了 Agent Teams 的根会话仍可协调、派发专家和使用任务板。[协调工具允许列表](../src/policy.mjs#L98)限制主代理直接使用工作工具。关闭严格模式后，后续调用即可使用工作工具。如果该根会话原来使用 PTC，重新打开会话可恢复 preset 的执行器。卸载插件前先关闭严格模式。卸载后如果主代理仍受限，请重新打开会话。
 
-安装或修改白名单后的验收步骤（先设置 `coordinatorMode: strict`；默认 `off` 时改为确认本插件不会拦截原本获准的工具调用）：
+## 验证
 
-1. 运行 `npm test`，确认严格协调模式的用例通过。
-2. 在主代理会话中请求读取一个简单文件。检查工具结果：主代理直接调用 `read`、`bash`、`edit` 或 `git_*` 应被拒绝，提示含 “Strict coordinator mode”。
-3. 要求主代理提交代码。它应向你报告冲突，不运行 git，也不委派提交。
-4. 确认 `spawn_teammate`、`ask_user_question`、`todo_write` 和任务板仍可用。
-5. 完全重启并恢复主代理会话后，重复第 2 步。
+本包直接运行 ESM，无需构建。安装目标 DSH 依赖后运行 `npm test`。安装验收可按以下步骤检查。
 
-白名单只检查已注册工具的调用，不是操作系统沙箱：专家的获准命令及其子进程仍作用于真实系统，以白名单内名称注册的工具也会被放行。
+1. 新建根会话，关闭再开启 Agent Teams。确认普通子代理工具按 preset 配置可用，开启 Agent Teams 后原生团队界面和任务板可用。
+2. 分别用 fresh 和 fork 上下文派发有效任务。确认根会话收到回复，专家不能再派发专家，恢复专家会话后越界读取仍会被拒绝。
+3. 在根会话切换严格模式，确认其禁止直接工作但允许协调，再在 PTC preset 中重复操作。分别测试已授权和未授权的模型组合。
+
+自动化检查不代替桌面重启、登录或实际提供方调用的验收。
 
 ## 卸载
 
-从 profile 的依赖和 `dsh.profile.bundles` 中移除本包，还原安装时改过的 Team 配置，再重启 DSH。历史派工记录保留用于审计，普通 Team 实现会忽略这些扩展记录。
+关闭严格模式，从 profile 依赖和 `dsh.profile.bundles` 中移除本包，删除本插件专用的覆盖项，再重启 DSH。原生团队组件仍可使用。历史派工记录保留在会话日志中。

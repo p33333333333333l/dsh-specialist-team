@@ -11,8 +11,8 @@ window.__ModuleLoader__.load({
 
     // ---------------------------------------------------------------- constants
     const NS = 'specialistTeam.settings';
-    const MODELS_NS = 'dsh-team-tools';
-    const MODE_NS = 'dsh-team';
+    const MODELS_NS = 'dsh-team';
+    const MODE_NS = MODELS_NS;
     const AUTH_NS = 'subagent-model-selection-settings';
     const ROLES = ['designer', 'researcher', 'engineer', 'architect', 'verifier'];
     const SERVICES = ['slots', 'locale', 'remote', 'remote.session', 'configForms'];
@@ -339,7 +339,7 @@ window.__ModuleLoader__.load({
 
     /**
      * Autosave controller for the page. `deps`:
-     *   models, mode: config forms ({getSnapshot, subscribe, mutate}) of dsh-team-tools / dsh-team
+     *   models, mode: config forms ({getSnapshot, subscribe, mutate}) for dsh-team
      *   auth: read-only form of subagent-model-selection-settings (optional)
      *   loadCatalog: () => Promise<{ok, value}>
      *   hub: optional createHub() instance
@@ -350,6 +350,8 @@ window.__ModuleLoader__.load({
       const modelEdits = new Map();
       const modelErrors = new Map();
       let modelSaving = false;
+      let modelSave;
+      let modeSave;
       let modeSaving = false;
       let modeError = null;
       let catalog = { status: 'idle', value: EMPTY_CATALOG };
@@ -444,7 +446,9 @@ window.__ModuleLoader__.load({
         modelEdits.clear();
         modelErrors.clear();
         modelSaving = false;
+        modelSave = undefined;
         modeSaving = false;
+        modeSave = undefined;
         modeError = null;
         catalog = { status: 'idle', value: EMPTY_CATALOG };
         catalogGeneration += 1;
@@ -470,6 +474,7 @@ window.__ModuleLoader__.load({
         if (modelSaving) return;
         modelSaving = true;
         const generation = writeGeneration;
+        if (models === mode && modeSave) await modeSave;
         while (generation === writeGeneration) {
           const pending = [...modelEdits].find(([, edit]) => edit.pending);
           if (!pending) break;
@@ -518,7 +523,7 @@ window.__ModuleLoader__.load({
           modelEdits.delete(role);
         } else {
           modelEdits.set(role, { entry, base, pending: true });
-          saveModels();
+          if (!modelSaving) modelSave = saveModels();
         }
         publish();
       }
@@ -538,16 +543,27 @@ window.__ModuleLoader__.load({
         const before = mode.getSnapshot();
         if (disposed || modeSaving || !writable(before) || (value !== 'off' && value !== 'strict') || value === currentMode(before)) return;
         const generation = writeGeneration;
-        const revision = before.revision;
         modeSaving = true;
         modeError = null;
-        const pending = mutate(mode, { op: 'set', path: ['coordinatorMode'], value }, revision);
+        modeSave = (async () => {
+          if (models === mode && modelSaving) await modelSave;
+          if (generation !== writeGeneration) return;
+          const latest = mode.getSnapshot();
+          if (currentMode(latest) === value) return;
+          if (!writable(latest) || currentMode(latest) !== currentMode(before)) {
+            modeError = writeError(latest, before.revision);
+            return;
+          }
+          await mutate(mode, { op: 'set', path: ['coordinatorMode'], value }, latest.revision);
+          if (generation !== writeGeneration) return;
+          const after = mode.getSnapshot();
+          if (after.status !== 'ready' || currentMode(after) !== value) modeError = writeError(after, latest.revision);
+        })();
         publish();
-        await pending;
-        if (disposed || generation !== writeGeneration) return;
-        const after = mode.getSnapshot();
+        await modeSave;
+        if (generation !== writeGeneration) return;
+        modeSave = undefined;
         modeSaving = false;
-        modeError = after.status === 'ready' && currentMode(after) === value ? null : writeError(after, revision);
         publish();
       }
 
@@ -803,7 +819,7 @@ window.__ModuleLoader__.load({
           `),
           opened ? h(Page, props) : null);
       }
-      ctx.effect(() => ctx.configForms.whileServed([MODELS_NS, MODE_NS], () => ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+      ctx.effect(() => ctx.configForms.whileServed([MODELS_NS], () => ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
         name: 'plugins.bundle.config', key: 'dsh-specialist-team', locale: NS,
       }, BundleSettings))), 'dsh-specialist-team: bundle settings');
     }

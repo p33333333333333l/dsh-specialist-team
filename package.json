@@ -1,53 +1,59 @@
 {
   "name": "dsh-specialist-team",
-  "version": "0.2.3",
-  "description": "Task routing, structured specialist assignments and role-scoped tool guards for DSH",
+  "version": "0.3.0",
+  "description": "Structured specialist assignments and role-scoped tool guards for native DSH Agent Teams",
   "type": "module",
   "main": "./src/index.mjs",
   "exports": {
     ".": "./src/index.mjs",
     "./client": "./client.js",
-    "./team": "./vendor/agent-team.mjs",
-    "./tools": "./vendor/tool-agent-team.mjs",
-    "./team/icon": "./docs/team-service-icon.svg",
-    "./tools/icon": "./docs/team-tools-icon.svg",
     "./package.json": "./package.json",
-    "./locale/*.json": "./locale/*.json",
-    "./team/locale/*.json": "./locale/team/*.json",
-    "./tools/locale/*.json": "./locale/tools/*.json"
+    "./locale/*.json": "./locale/*.json"
   },
-  "license": "Apache-2.0 AND MIT",
+  "license": "Apache-2.0",
   "files": [
     "src",
-    "vendor",
     "client.js",
-    "locale",
+    "locale/*.json",
     "docs",
     "cordis.patch.yml",
     "README.md",
     "README.zh-CN.md",
-    "LICENSE",
-    "NOTICE",
-    "NOTICE.zh-CN"
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=22",
-    "dsh": "0.2.1-rc.3"
+    "dsh": "0.2.2-rc.4"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/dsh-brand": "*",
-    "@deepseek-ai/dsh-experimental-agent-team": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-llm": "*",
-    "@deepseek-ai/dsh-scope": "*",
-    "@deepseek-ai/dsh-session": "*",
-    "@deepseek-ai/dsh-subagent": "*",
-    "@deepseek-ai/dsh-tools": "*",
-    "@deepseek-ai/schemastery": "*",
-    "zod": "^4.4.3"
+    "@deepseek-ai/dsh-session": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-subagent": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-tool-executor-native": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.4",
+    "@deepseek-ai/schemastery": "~3.19.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-agent": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-agent-loop": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-agent-team": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-fs-local": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-session-projection": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-session-query": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-subagent-fork-in-process": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-tool-agent-team": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-tool-executor-ptc": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-tool-subagent": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-tool-subagent-control": "0.2.2-rc.4",
+    "@deepseek-ai/dsh-working-directory": "0.2.2-rc.4"
   },
   "dsh": {
     "bundle": {

@@ -2,73 +2,50 @@
 
 [English](maintenance.md) | [简体中文](maintenance.zh-CN.md) · [README](../README.md)
 
-## Development
-
-This package runs ESM source directly; there is no build step. Run `npm test` with the DSH dependencies available.
-
-The supported baseline is DSH `0.2.1-rc.3`. Before supporting another release, verify the actual Loader composition, tool schemas, and member recovery. The bundled Team code comes from that release; see [source notes](../vendor/README.md) for the model-routing changes and MIT license.
-
-## Verification
-
-Run `npm test`. Policy tests check tool, path and command limits; integration tests use a local mock model for assignments, recovery and live updates. Client tests cover autosave, conflicts, disconnects and bilingual controls. These checks do not verify desktop restart, sign-in or live provider calls.
-
 ## Installation checks
 
+Version `0.3.0` requires exactly DSH `0.2.2-rc.4` and Node.js 22 or later. After installing or upgrading, check the plugin entries in the active profile:
 
-After installing or upgrading, check these states in the plugin page:
+| Entry ID | Expected state |
+| --- | --- |
+| `agent-team`, `tool-agent-team` | Enabled. DSH provides the team service and task board tools. |
+| `tool-subagent-control`, `tool-subagent`, `tool-subagent-fork` | Keep the normal DSH configuration for ordinary subagents and group controls. |
+| `ui-agent-team` | Keep the native team UI enabled where available. Use its **Agent Teams** toggle in the root session. |
+| `subagent-model-selection-settings` | To use custom model routes, enable selection and authorize provider/model pairs before starting a new root session. |
+| `dsh-team` | Enabled. This bundle has one entry for specialist dispatch, settings and assignment guards. |
 
-| Component ID | Expected state | Purpose |
-| --- | --- | --- |
-| `agent-team`, `tool-agent-team` | Disabled | Original Team service and tools replaced by this plugin |
-| `tool-subagent`, `tool-subagent-fork` | Disabled | Ordinary subagent entry points |
-| `ui-agent-team` | If installed, leave enabled to use the Team interface | Not installed by this bundle |
-| `subagent-model-selection-settings` | Loaded | The default tools configuration requires this service to initialize. To use preferences, enable model selection and authorize the provider/model pairs. |
-| `dsh-team-service`, `dsh-team-tools`, `dsh-team` | Enabled and running | This plugin's Team service, tools, and delegation policy |
+Leave the native preset groups intact. In a root session, confirm that switching Agent Teams on exposes `spawn_teammate` with required `specialist` and `assignment` fields. Switching it off removes specialist dispatch. Child sessions cannot dispatch specialists. DSH continues to manage the agent tree, messaging and task board.
 
-Any `config.models` preferences on `dsh-team-tools` must use currently authorized provider/model pairs. If authorization changes, update the preferences; invalid choices fail rather than silently falling back. When setting `reasoningEffort` manually, use a level listed on the settings page for that provider and model.
+## Upgrade from 0.2.x
 
-### Original Team component errors or member creation failures
+1. In the active profile’s `cordis.patch.yml`, move any `dsh-team-tools.config.models` preferences to `dsh-team.config.models`. Preserve `dsh-team.config.coordinatorMode`. See the [manual configuration example](../README.md#manual-configuration-optional).
+2. Remove old `dsh-team-tools` and `dsh-team-service` entries or overrides. Remove `disabled: true` overrides added for the old bundle on `agent-team`, `tool-agent-team`, `ui-agent-team`, `tool-subagent-control`, `tool-subagent` and `tool-subagent-fork`, where present. Restore any native delegation groups disabled for the old setup.
+3. Reload DSH, check the plugin entries above, then enable Agent Teams in a new root session. Keep sessions from the replacement Team implementation as history. Their journals remain available for reference. Existing team members and tasks are not migrated into the native team.
 
-This plugin's `cordis.patch.yml` disables the four original service or tool entries listed above by default, but the profile's own `cordis.patch.yml` can override those settings later. For example, a leftover `disabled: false` in the desktop profile re-enables an original component. The original and replacement implementations then register the same `agentTeams` service and tool names. An observed failure showed errors on `agent-team` and `tool-agent-team` while the Team interface and all three replacement components remained active.
-
-Inspect the current profile's `cordis.patch.yml` (for example, `~/.dsh/profiles/desktop/cordis.patch.yml`). Remove overrides that re-enable the original components, or set them to disabled. The fix for the observed conflict was:
-
-```yaml
-- id: tool-agent-team
-  disabled: true
-- id: agent-team
-  disabled: true
-```
-
-Also keep `tool-subagent` and `tool-subagent-fork` disabled, and leave `ui-agent-team` enabled if you use its interface. Do not disable this plugin's three components to clear errors on the original components.
-
-After saving, wait for configuration hot reload, recheck the table above, then create a member with `specialist` and `assignment`, assign it a task, and confirm that it replies. Reload DSH if the configuration does not load automatically.
-
+The earlier replacement implementation and its MIT license are archived in `vendor/` in the source repository. The `0.3.0` release package excludes the archive.
 
 ## Assignments and recovery
 
-Each spawn requires a specialty and an assignment: deliverable, readable and writable paths, allowed tools, reviewer, stopping condition, and exact commands for verifier checks. Invalid assignments are rejected before the member starts. The assignment is saved in the Lead's journal and copied to the member's journal before work begins.
+Only the root of an enabled Agent Teams session can use `spawn_teammate`. Each spawn requires a specialty and an assignment defining the deliverable, read and write paths, allowed tools, reviewer and stopping condition. Include exact command strings if a verifier needs to run checks. Write paths must fall within read scopes. `context: fresh` is the default. Use `context: fork` to inherit the lead’s transcript.
 
-The guard checks registered tool calls before execution. It resolves paths to reject direct access outside the assigned scope. With a PTC host, specialists use native tools instead of an unrestricted code-execution entry point.
+Invalid assignments are rejected before launch. The bundle saves the assignment in the specialist’s session journal before work begins and reloads it when the native specialist session is resumed. Specialists use the native tool executor even in a PTC preset and report to the lead through DSH’s `send_message` with `agent: lead`.
 
-These checks are not an OS sandbox. Recursive searches may follow links, approved commands and their child processes can access the same system, and files can change between the check and execution. Review the commands and their effects accordingly.
-
-A recovered member keeps its saved assignment and model settings. If the Lead is not loaded, resume the parent Team session before continuing. Unloading the policy leaves existing members blocked; restart those sessions to continue. Older members without assignments retain their previous behavior.
+Guards enforce the assigned scope for registered tools. Recursive searches may follow links, approved commands can launch other processes, and files may change between a scope check and execution. Review what each verifier command can affect. If the bundle is unloaded, already assigned specialists are blocked. Reload the bundle and reopen the affected sessions before continuing specialist work.
 
 ## Strict coordinator mode
 
-Use the settings switch or set `coordinatorMode: strict` on `dsh-team`. While on, the lead is subject to the [tool allowlist](../src/policy.mjs). Turning it off lifts this restriction; specialist assignment checks apply in both modes. Unloading while strict leaves the lead restricted and unable to spawn until the session restarts.
+Set `coordinatorMode: strict` on `dsh-team` or use the switch in Specialist model settings. In an enabled Agent Teams root session, the lead can coordinate, dispatch specialists and use the task board. Direct work tools are blocked by the [coordinator allowlist](../src/policy.mjs#L98). Turning strict mode off restores the lead’s work tools on subsequent calls. If the root previously used PTC, reopen the session to restore the preset’s executor. Turn strict mode off before unloading the bundle. If the lead remains restricted after unloading, reopen the session.
 
-Acceptance steps after installing or changing the allowlist (set `coordinatorMode: strict` first; with the default `off`, check instead that this plugin does not block otherwise permitted tool calls):
+## Verification
 
-1. Run `npm test` and confirm the strict coordinator cases pass.
-2. In a Lead session, ask for a simple file read. Check the tool result: a direct `read`, `bash`, `edit` or `git_*` call should be refused with "Strict coordinator mode".
-3. Ask the Lead to commit. It should report the conflict to you and not run git or delegate a commit.
-4. Confirm that `spawn_teammate`, `ask_user_question`, `todo_write` and the task board still work.
-5. After a full restart and resume of the Lead session, repeat step 2.
+This package runs ESM directly. With the target DSH dependencies installed, run `npm test`. For an installation check:
 
-The allowlist checks registered tool calls only. It is not an OS sandbox: a specialist's approved commands and their child processes still act on the real system, and a tool registered under an allowed name would be allowed.
+1. In a fresh root session, toggle Agent Teams off and on. Confirm ordinary subagent tools are available as appropriate to the preset and the native team UI and task board work when enabled.
+2. Dispatch fresh and fork specialists with valid assignments. Confirm the root receives replies, a specialist cannot dispatch another specialist, and an out-of-scope read is rejected after resuming the specialist.
+3. Toggle strict mode in the root and verify that it blocks direct work while allowing coordination. Repeat in a PTC preset. Try an authorized model route and an unauthorized one.
+
+Automated checks do not verify desktop restart, sign-in or live provider calls.
 
 ## Uninstall
 
-Remove this package from the profile's dependencies and `dsh.profile.bundles`, restore any Team settings you changed for this installation, and restart DSH. Historical assignment records remain available for audit; the ordinary Team implementation ignores these extension records.
+Turn strict mode off, remove the bundle from the profile dependencies and `dsh.profile.bundles`, remove bundle-specific overrides, and restart DSH. The native team components remain available. Historical assignment records remain in session journals.

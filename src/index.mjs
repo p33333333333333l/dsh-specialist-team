@@ -1,126 +1,169 @@
+import { randomUUID } from 'node:crypto';
 import { appendPluginRecord } from '@deepseek-ai/dsh-session';
+import { parentAgentOptionsForDelegation } from '@deepseek-ai/dsh-subagent';
+import { NativeToolExecutor } from '@deepseek-ai/dsh-tool-executor-native';
+import { defineTool } from '@deepseek-ai/dsh-tools';
 import z from '@deepseek-ai/schemastery';
-import { ASSIGNMENT_RECORD, assignmentIn, leadToolDenial, rolePrompt, toolDenial } from './policy.mjs';
+import { ASSIGNMENT_RECORD, ROLES, assignmentIn, leadToolDenial, rolePrompt, toolDenial } from './policy.mjs';
 import { COORDINATOR_MODES, routingPrompt } from './prompts.mjs';
+import { specialistSpawn } from './spawn.mjs';
 
 export const name = 'specialist-team';
-export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt', 'sessions'];
-
-/**
- * `coordinatorMode`: `off` (default) leaves the Lead's tools alone; `strict` restricts the Lead to dispatch and coordination.
- * The field is volatile, so the settings page can switch it while the plugin keeps running.
- */
+export const inject = ['agents', 'agentTeams', 'subagents', 'tools', 'systemPrompt', 'sessions', 'workingDirectory', 'llm'];
+const model = z.object({ provider: z.string().required(), model: z.string().required(), reasoningEffort: z.string() });
 export const Config = z.object({
   coordinatorMode: z.union(COORDINATOR_MODES.map(mode => z.const(mode))).default('off').volatile(),
+  models: z.dict(model, z.union(ROLES.map(role => z.const(role)))).default({}).volatile(),
 }).default({});
 
-/** Current mode from a volatile reference or a plain string (direct `apply()` callers). */
-function modeOf(value) {
-  const mode = value !== null && typeof value === 'object' && typeof value.get === 'function' ? value.get() : value;
-  return mode ?? 'off';
+const readConfig = value => typeof value?.get === 'function' ? value.get() : value;
+const text = (description, required = false) => ({ type: 'string', description, ...(required ? { required: true } : {}) });
+
+async function selectModel(ctx, parent, args, preference, signal) {
+  const explicit = [args.provider, args.model, args.reasoning_effort].some(value => value !== undefined);
+  if (!explicit && !preference) return;
+  const route = explicit ? { provider: args.provider, model: args.model, reasoningEffort: args.reasoning_effort } : preference;
+  if (!route.provider?.trim() || !route.model?.trim() || route.reasoningEffort === '') {
+    throw new Error('Specify a nonempty provider and model together, with an optional reasoning effort.');
+  }
+  // Read the first recorded decision, matching RC4's native model selection.
+  const policy = parent.session.snapshotEvents().find(event => event.type === 'subagent/model-selection-policy');
+  const inherited = parentAgentOptionsForDelegation(parent);
+  const routes = policy ? policy.data.allowedModels : [inherited];
+  if (!Array.isArray(routes) || !routes.some(candidate => candidate.provider === route.provider && candidate.model === route.model)) {
+    throw new Error(`Child LLM route "${route.provider}/${route.model}" is not allowed for this Session.`);
+  }
+  await ctx.llm.resolveCallConfig(route, signal);
+  return { provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort };
 }
 
 export function apply(ctx, config = {}) {
-  const readMode = () => {
-    const mode = modeOf(config.coordinatorMode);
-    if (!COORDINATOR_MODES.includes(mode)) throw new Error(`specialist-team: coordinatorMode must be one of ${COORDINATOR_MODES.join(', ')}`);
-    return mode;
+  const pending = new Map();
+  const installed = new Set();
+  const nativeExecutors = new WeakSet();
+  const lifetime = new AbortController();
+  const useNativeExecutor = agent => {
+    if (nativeExecutors.has(agent)) return;
+    agent.ctx.tools.setExecutor(new NativeToolExecutor(agent.ctx));
+    nativeExecutors.add(agent);
   };
-  readMode();
-  const installed = new Map();
-  // Per Lead: re-evaluates whether it should present native tools after a mode change.
-  const presentations = new Map();
+  const mode = () => readConfig(config.coordinatorMode) ?? 'off';
   let stopped = false;
-  // The mode in force when the plugin unloaded; the Lead guard keeps enforcing it afterwards.
-  let unloadMode;
-  const effectiveMode = () => (stopped ? unloadMode : readMode());
+  let lastMode;
+  const isLead = agent => {
+    if (!agent) return false;
+    try {
+      return ctx.subagents.rootOf(agent) === agent && ctx.agentTeams.isEnabled(agent);
+    } catch (error) {
+      if (error.code !== 'UNAUTHORIZED') throw error;
+      return false;
+    }
+  };
+
   const install = async agent => {
     if (stopped || installed.has(agent)) return;
-    const own = assignmentIn(agent, agent.id);
-    const membership = ctx.agentTeams.tryMembership(agent);
-    if (!membership && !own) return;
-    const disposers = [];
-    installed.set(agent, disposers);
-    if (!own && membership?.role === 'lead') {
-      // Strict coordinator mode: Lead only dispatches, coordinates and asks the user.
-      // Native presentation keeps run_code, a code-execution entry point the guard cannot inspect, away from a strict Lead.
-      let nativeDisposer = null;
-      const syncPresentation = () => {
-        if (stopped || installed.get(agent) !== disposers) return;
-        const strict = readMode() === 'strict';
-        if (strict && !nativeDisposer) nativeDisposer = agent.ctx.tools.presentAs('native');
-        else if (!strict && nativeDisposer) {
-          const dispose = nativeDisposer;
-          nativeDisposer = null;
-          dispose();
-        }
-      };
-      disposers.push(() => {
-        const dispose = nativeDisposer;
-        nativeDisposer = null;
-        dispose?.();
-      });
-      presentations.set(agent, syncPresentation);
-      syncPresentation();
-      // Installed before the prompt and, like the specialist guard, deliberately kept out of
-      // `disposers`: unloading the plugin must not return real tools to a strict Lead.
-      agent.ctx.tools.guard(exec => {
-        if (exec.agent !== agent) return;
-        if (effectiveMode() !== 'strict') return;
-        // Spawning is the only path that creates assigned members; once the policy is unloaded it would create unrestricted ones.
-        if (stopped && exec.name === 'spawn_teammate') return 'Specialist policy was unloaded; restart this Lead session before spawning specialists.';
-        return leadToolDenial(exec);
-      });
-      disposers.push(agent.ctx.systemPrompt.context({
-        name: 'specialist-team:routing',
-        order: agent.ctx.systemPrompt.getContextOrder('TEAM_IDENTITY'), required: true,
-        text: () => routingPrompt(effectiveMode()), interpolate: false,
-      }));
-      return;
-    }
-    const assignment = own ?? assignmentIn(membership.root, agent.id);
-    // Existing members without an assignment retain their original behavior.
-    if (!assignment) return;
-    let ready = false;
-    disposers.push(agent.ctx.tools.presentAs('native'));
-    // The guard belongs to the agent: policy unload revokes it until that agent closes.
-    agent.ctx.tools.guard(exec => {
+    installed.add(agent);
+    const initial = pending.get(agent.id);
+    // Assignment guards belong to the Agent scope, so unloading the plugin
+    // cannot grant additional capabilities to an already-running specialist.
+    let assignment;
+    let loading = true;
+    const tools = agent.ctx.tools;
+    tools.guard(exec => {
       if (exec.agent !== agent) return;
-      if (stopped) return 'Specialist policy was unloaded; restart this specialist session before continuing.';
-      if (!ready) return 'Specialist assignment is still loading; retry after initialization.';
-      if (!ctx.agentTeams.tryMembership(agent)) return 'Specialist Lead is not loaded; resume the parent Team session before continuing.';
-      if (exec.name === 'send_message') return exec.arguments?.target === 'lead' ? undefined : 'Specialists report only to Lead.';
-      return toolDenial(assignment, exec);
+      if (loading) return 'Specialist policy is still loading.';
+      if (!assignment) return isLead(agent) && (stopped ? lastMode : mode()) === 'strict' ? leadToolDenial(exec) : undefined;
+      if (stopped) return 'Specialist policy was unloaded. Reopen this session before continuing.';
+      if (exec.name === 'send_message') {
+        return exec.arguments?.agent === 'lead' ? undefined : 'Specialists report only to Lead.';
+      }
+      return toolDenial(assignment, exec, ctx.workingDirectory.get(agent.session));
     });
-    if (assignment.version !== 1) throw new Error('Unsupported specialist assignment version');
-    if (!own) {
-      appendPluginRecord(agent.session, ASSIGNMENT_RECORD, { memberId: agent.id, assignment });
-      await ctx.sessions.flush(agent.session);
+    const own = assignmentIn(agent, agent.id);
+    assignment = own ?? initial;
+    if (assignment) {
+      useNativeExecutor(agent);
+      if (!own) {
+        appendPluginRecord(agent.session, ASSIGNMENT_RECORD, { memberId: agent.id, assignment });
+        await ctx.sessions.flush(agent.session);
+      }
+    } else if (mode() === 'strict' && isLead(agent)) {
+      useNativeExecutor(agent);
     }
-    if (stopped || installed.get(agent) !== disposers) return;
-    disposers.push(agent.ctx.systemPrompt.context({
-      name: 'specialist-team:routing',
-      order: agent.ctx.systemPrompt.getContextOrder('TEAM_IDENTITY'), required: true,
-      text: rolePrompt(assignment), interpolate: false,
-    }));
-    ready = true;
+    loading = false;
   };
+
   ctx.on('agent/created', ({ agent }) => install(agent));
-  ctx.on('agent/disposed', ({ agent }) => {
-    for (const dispose of installed.get(agent) ?? []) dispose();
-    installed.delete(agent);
-    presentations.delete(agent);
-  });
-  // Emitted by the Loader right after it commits a volatile config change into this plugin's references.
+  ctx.on('agent/disposed', ({ agent }) => installed.delete(agent));
   ctx.on('loader/volatile-update', () => {
-    for (const sync of presentations.values()) sync();
+    if (mode() === 'strict') for (const agent of installed) if (isLead(agent)) useNativeExecutor(agent);
   });
+  ctx.on('session/event', (session, event) => {
+    if (event.type !== 'team/mode' || !event.data.enabled || mode() !== 'strict') return;
+    const agent = ctx.agents.get(session.id);
+    if (agent && installed.has(agent)) useNativeExecutor(agent);
+  });
+  ctx.systemPrompt.context({
+    name: 'specialist-team:routing',
+    order: ctx.systemPrompt.getContextOrder('SUBAGENT_DELEGATION'),
+    required: true,
+    interpolate: false,
+    text: ({ agent }) => {
+      if (!agent) return '';
+      const assignment = assignmentIn(agent, agent.id);
+      if (assignment) return rolePrompt(assignment);
+      return isLead(agent) ? routingPrompt(mode()) : '';
+    },
+  });
+
+  ctx.tools.register(defineTool(specialistSpawn({
+    name: 'spawn_teammate',
+    description: 'Create a scoped specialist in the native Agent Team.',
+    parameters: {
+      name: text('Unique native teammate name.', true),
+      description: text('Short label for the native agent tree.', true),
+      prompt: text('Task instructions for the specialist.', true),
+      context: { type: 'string', enum: ['fresh', 'fork'], description: 'Defaults to fresh. Fork shares the Lead transcript.' },
+      provider: text('Optional authorized model provider.'),
+      model: text('Optional authorized model ID.'),
+      reasoning_effort: text('Optional reasoning effort for the selected route.'),
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { name: text('Native teammate name.', true) } },
+      render: (_args, value) => [{ type: 'text', text: `Started specialist ${value.name}` }],
+    },
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      const parent = exec.agent;
+      if (!isLead(parent)) throw new Error('Enable Agent Teams in the root session before spawning a specialist.');
+      const signal = AbortSignal.any([exec.signal, lifetime.signal]);
+      const agentOptions = await selectModel(ctx, parent, args, readConfig(config.models)?.[args.specialist], signal);
+      signal.throwIfAborted();
+      if (stopped || !isLead(parent)) throw new Error('Specialist dispatch is no longer available in this session.');
+      const childId = randomUUID();
+      pending.set(childId, args.specialistAssignment);
+      try {
+        const started = await ctx.subagents.startActivation({
+          childId, parent, name: args.name, label: args.description,
+          provider: args.context === 'fork' ? 'fork' : 'spawn',
+          cwd: args.specialistAssignment.cwd,
+          prompt: [{ type: 'text', text: args.prompt }],
+          maxDepth: ctx.subagents.resolveMaxDepth(),
+          signal, delivery: 'parent',
+          ...agentOptions === undefined ? {} : { agentOptions },
+        });
+        return { name: started.name };
+      } finally {
+        pending.delete(childId);
+      }
+    },
+  }, agent => ctx.workingDirectory.get(agent.session))), { when: ({ agent }) => isLead(agent) });
+
   ctx.effect(() => () => {
-    unloadMode = readMode();
+    lastMode = mode();
     stopped = true;
-    for (const disposers of installed.values()) for (const dispose of disposers) dispose();
+    lifetime.abort();
     installed.clear();
-    presentations.clear();
   });
   return Promise.all(ctx.agents.list().map(install));
 }

@@ -1,31 +1,8 @@
-- id: agent-team
-  disabled: true
-- id: tool-agent-team
-  disabled: true
-- id: tool-subagent
-  disabled: true
-- id: tool-subagent-fork
-  disabled: true
 - insert:
-    - id: dsh-team-service
-      name: dsh-specialist-team/team
-      config:
-        maxMembers: 8
-        maxTasks: 256
-        maxMessageBytes: 65536
-        disposalTimeoutMs: 5000
-    - id: dsh-team-tools
-      name: dsh-specialist-team/tools
-      config:
-        interrupt: true
-        freshProvider: spawn
-        forkProvider: fork
-        modelSelectionSettings: true
-        # Optional per-specialist model preferences; each pair must be authorized:
-        # models:
-        #   researcher: { provider: <provider>, model: <model>, reasoningEffort: high }
     - id: dsh-team
       name: dsh-specialist-team
-      # Optional: strict coordinator mode (default off)
+      # Optional settings for specialist dispatch within native Agent Teams:
       # config:
       #   coordinatorMode: strict
+      #   models:
+      #     researcher: { provider: <provider>, model: <model>, reasoningEffort: high }

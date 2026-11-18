@@ -67,6 +67,20 @@ test('uses each tool actual path field despite extraneous path aliases', () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('preset tools, filesystem escalation and a changed session cwd do not widen an assignment', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'specialist-preset-'));
+  try {
+    mkdirSync(join(dir, 'src'));
+    const a = assignmentFrom(make(dir), dir);
+    for (const name of ['subagent', 'subagent_fork', 'workflow', 'run_code', 'apply_patch', 'working_directory']) {
+      assert.ok(toolDenial(a, { name, arguments: {} }), name);
+    }
+    assert.ok(toolDenial(a, { name: 'edit', arguments: { file_path: 'src/ok', sandbox_permissions: 'danger-full-access' } }));
+    assert.ok(toolDenial(a, { name: 'read', arguments: { file_path: 'outside' } }, tmpdir()));
+    assert.equal(toolDenial(a, { name: 'edit', arguments: { file_path: 'ok' } }, join(dir, 'src')), undefined);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('persisted assignments fail closed and ignore inherited records', () => {
   const dir = mkdtempSync(join(tmpdir(), 'specialist-replay-'));
   try {
