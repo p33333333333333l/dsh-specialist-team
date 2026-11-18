@@ -1,4 +1,4 @@
-# DSH 专家团队插件
+# dsh-specialist-team
 
 [English](README.md) | 简体中文
 
