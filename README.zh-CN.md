@@ -6,12 +6,12 @@
 
 ## 安装并试用
 
-`0.3.2` 要求 **DSH `0.2.2-rc.4`** 和 **Node.js 22 或更高版本**。安装包见 [v0.3.2 发行页](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.2)。
+`0.3.3` 要求 **DSH `0.2.2-rc.4`** 和 **Node.js 22 或更高版本**。安装包见 [v0.3.3 发行页](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.3)。
 
 1. 在 DSH 插件管理器中用 `.tgz` 地址安装，或运行下面的命令。如果使用其他配置（profile），请替换 `web`。
 
    ```sh
-   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.2/dsh-specialist-team-0.3.2.tgz
+   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.3/dsh-specialist-team-0.3.3.tgz
    ```
 
 2. 打开根会话，开启 **Agent Teams**。如果插件管理器提示有待应用的变更，先重新加载 DSH。

@@ -6,12 +6,12 @@ Assign work to specialists with a specific deliverable, file scope, and set of t
 
 ## Install and try it
 
-Version `0.3.2` requires **DSH `0.2.2-rc.4`** and **Node.js 22 or newer**. The canonical package is attached to the [v0.3.2 release](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.2).
+Version `0.3.3` requires **DSH `0.2.2-rc.4`** and **Node.js 22 or newer**. The canonical package is attached to the [v0.3.3 release](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.3).
 
 1. Install the release package in DSH’s plugin manager using its `.tgz` URL, or run the following command for the `web` profile. Replace `web` if your installation uses a different profile.
 
    ```sh
-   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.2/dsh-specialist-team-0.3.2.tgz
+   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.3/dsh-specialist-team-0.3.3.tgz
    ```
 
 2. Open a root conversation and turn on **Agent Teams**. If the plugin manager reports a pending change, reload DSH first.
