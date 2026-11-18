@@ -1,0 +1,15 @@
+dsh-specialist-team 版权归属声明
+
+本文为 NOTICE 的简体中文译文。许可条款请参阅所引许可证原文。
+
+本项目的原创贡献采用 Apache 许可证 2.0 版，见 LICENSE。
+
+本发行包包含来自 DeepSeek Harness 的代码：
+https://github.com/deepseek-ai/deepseek-harness
+上游版本：dsh-v0.2.1-rc.3
+上游提交：1f81c047fc48fa190a683e469daa699857e9afe8
+Copyright (c) 2026 DeepSeek
+
+vendor/*.mjs 中来自上游的部分，以及 vendor/model-routing.patch 中的上游上下文，均保留 MIT 许可。完整的上游版权与许可声明见 vendor/LICENSE-MIT。本项目的原创修改采用 Apache-2.0，不取代或移除上游的 MIT 授权和声明。
+
+各文件的来源及修改说明见 vendor/README.zh-CN.md。

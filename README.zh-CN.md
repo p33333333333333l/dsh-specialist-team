@@ -60,4 +60,4 @@
 
 ## 维护与许可
 
-[维护指南](docs/maintenance.zh-CN.md)包含组件冲突排查、运行测试、会话恢复和卸载步骤。本项目原创贡献采用 [Apache-2.0](LICENSE)；随包分发的上游代码保留 [MIT 许可](vendor/LICENSE-MIT)。来源和修改范围见[来源说明](vendor/README.md)及 [NOTICE](NOTICE)。
+[维护指南](docs/maintenance.zh-CN.md)包含组件冲突排查、运行测试、会话恢复和卸载步骤。本项目原创贡献采用 [Apache-2.0](LICENSE)；随包分发的上游代码保留 [MIT 许可](vendor/LICENSE-MIT)。来源和修改范围见[来源说明](vendor/README.zh-CN.md)及[版权归属声明](NOTICE.zh-CN)。
