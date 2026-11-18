@@ -33,7 +33,7 @@ The lead integrates results, commits, and publishes. For independent verificatio
 
 ## Set specialist models
 
-Open **Plugins → Specialist Team → Specialist model settings**. Select both a provider and a model for each role you want to configure. Changes save automatically and apply to new specialists. The lead’s model is used when the assignment and the role have no model preference.
+Open **Plugins → Specialist Team → Specialist model settings**. Select both a provider and a model for each role you want to configure. Changes save automatically and apply to new specialists. The lead’s model is used when the assignment and the role have no model preference. Blank optional model fields in the spawn call are treated as omitted.
 
 ![The Specialist Team plugin page with the model settings entry and the running dsh-team component](docs/specialist-settings.jpg)
 

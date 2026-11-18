@@ -20,9 +20,12 @@ const readConfig = value => typeof value?.get === 'function' ? value.get() : val
 const text = (description, required = false) => ({ type: 'string', description, ...(required ? { required: true } : {}) });
 
 async function selectModel(ctx, parent, args, preference, signal) {
-  const explicit = [args.provider, args.model, args.reasoning_effort].some(value => value !== undefined);
+  const provider = args.provider?.trim() ? args.provider : undefined;
+  const model = args.model?.trim() ? args.model : undefined;
+  const reasoningEffort = args.reasoning_effort?.trim() ? args.reasoning_effort : undefined;
+  const explicit = provider !== undefined || model !== undefined || reasoningEffort !== undefined;
   if (!explicit && !preference) return;
-  const route = explicit ? { provider: args.provider, model: args.model, reasoningEffort: args.reasoning_effort } : preference;
+  const route = explicit ? { provider, model, reasoningEffort } : preference;
   if (!route.provider?.trim() || !route.model?.trim() || route.reasoningEffort === '') {
     throw new Error('Specify a nonempty provider and model together, with an optional reasoning effort.');
   }

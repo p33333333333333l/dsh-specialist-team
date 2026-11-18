@@ -144,7 +144,8 @@ test('specialist names must match the assigned role and include a task slug', op
   assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
 
   const name = 'researcher-read-docs';
-  assert.equal(await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, name)), `Started specialist ${name}`);
+  const noOverride = { provider: '', model: '', reasoning_effort: '' };
+  assert.equal(await call(ctx, lead, 'spawn_teammate', { ...specialist(fixture.root, name), ...noOverride }), `Started specialist ${name}`);
   assert.ok(await member(ctx, lead, name));
   await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, name), /already used/);
 
@@ -359,8 +360,9 @@ test('specialist routes obey native Session model policy', options, async t => {
   await call(ctx, lead, 'spawn_teammate', { ...specialist(fixture.root, 'researcher-partial'), model: 'explicit' }, /provider and model together/);
   await call(ctx, lead, 'subagent', { ...ordinary('ordinary-bad'), provider: 'mock', model: 'denied' }, /not allowed/);
   for (const [name, override, model, effort] of [
-    ['researcher-preferred', {}, 'preferred', 'low'],
+    ['researcher-preferred', { provider: '', model: ' ', reasoning_effort: '' }, 'preferred', 'low'],
     ['researcher-overridden', explicit, 'explicit', 'high'],
+    ['researcher-no-effort', { ...explicit, reasoning_effort: '' }, 'explicit', undefined],
   ]) {
     await call(ctx, lead, 'spawn_teammate', { ...specialist(fixture.root, name), ...override });
     const request = await firstRequest(adapter, (await member(ctx, lead, name)).id);
@@ -368,5 +370,5 @@ test('specialist routes obey native Session model policy', options, async t => {
     assert.equal(request.model, model);
     assert.equal(request.reasoningEffort, effort);
   }
-  assert.deepEqual((await ctx.subagents.listDescendants(lead.id, signal)).map(row => row.path), ['researcher-preferred', 'researcher-overridden']);
+  assert.deepEqual((await ctx.subagents.listDescendants(lead.id, signal)).map(row => row.path), ['researcher-preferred', 'researcher-overridden', 'researcher-no-effort']);
 });
