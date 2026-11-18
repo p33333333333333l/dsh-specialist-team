@@ -57,10 +57,6 @@ For manual setup, use the `dsh-team` entry in the profile’s `cordis.patch.yml`
 
 Model keys are `designer`, `researcher`, `engineer`, `architect`, and `verifier`. Each can also set `reasoningEffort`. Saving through the settings page can remove comments in the edited YAML block.
 
-## Troubleshoot an upgrade from 0.2.x
-
-If you configured a previous version manually, move model preferences from `dsh-team-tools.config.models` to `dsh-team.config.models`. Remove the overrides you added for `dsh-team-tools` and `dsh-team-service` and restore any native Team entries or delegation groups you disabled for the old version. Reload DSH, then enable Agent Teams in a new root conversation. Old team sessions remain available as history. Their membership and task lists stay with those sessions.
-
 ## Source and license
 
 Run `npm install` and `npm test` in a checkout to verify the source. See the [Apache-2.0 license](LICENSE) and [attribution notice](NOTICE).

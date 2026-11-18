@@ -57,10 +57,6 @@
 
 `models` 支持 `designer`、`researcher`、`engineer`、`architect` 和 `verifier`，每项还可设置 `reasoningEffort`。通过设置页保存可能会移除对应 YAML 块里的注释。
 
-## 从 0.2.x 升级后遇到问题
-
-如果手动配置过旧版，请将模型偏好从 `dsh-team-tools.config.models` 移到 `dsh-team.config.models`。移除曾为 `dsh-team-tools` 和 `dsh-team-service` 添加的覆盖项，恢复为旧版停用的原生团队条目和委派分组。重新加载 DSH，再在新根会话中开启 Agent Teams。旧团队会话可以继续查阅，成员和任务保留在旧会话中。
-
 ## 源码与许可
 
 在源码目录运行 `npm install` 和 `npm test` 即可验证。参见 [Apache-2.0 许可证](LICENSE)和[版权归属声明](NOTICE.zh-CN)。
