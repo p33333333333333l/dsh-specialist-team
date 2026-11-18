@@ -303,6 +303,29 @@ test('live coordinator changes select native execution only for the enabled team
   assert.equal(reads.length, 2);
 });
 
+test('reloading the plugin restores scoped tools on the same live Agents', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, policyFiber, lead: createLead } = await fixture.start({ coordinatorMode: 'strict' });
+  probe(ctx, 'read', ['file_path']);
+  const lead = await createLead();
+  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'reader'));
+  const child = await member(ctx, lead, 'reader');
+  const allowed = { file_path: fixture.root };
+  const outside = { file_path: join(fixture.root, '..', 'outside') };
+  await call(ctx, child, 'read', allowed);
+  await policyFiber.dispose();
+  await call(ctx, child, 'read', allowed, /policy was unloaded/);
+  await call(ctx, lead, 'read', allowed, /Strict coordinator mode/);
+
+  const reloaded = await import('../src/index.mjs?reload');
+  await ctx.plugin(reloaded, { coordinatorMode: 'strict' });
+  assert.equal(ctx.agents.get(child.id), child);
+  await call(ctx, child, 'read', allowed);
+  await call(ctx, child, 'read', outside, /outside/);
+  await call(ctx, lead, 'read', allowed, /Strict coordinator mode/);
+  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'second'));
+});
+
 test('specialist routes obey native Session model policy', options, async t => {
   const fixture = workspace(t);
   const preferred = { provider: 'mock', model: 'preferred', reasoningEffort: 'low' };

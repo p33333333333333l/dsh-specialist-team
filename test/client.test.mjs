@@ -522,14 +522,34 @@ test('a connection reset drops the draft and ignores the late save result', asyn
   controller.dispose();
 });
 
-test('a stale catalog response never replaces a newer one', async () => {
+test('adapter invalidations during a catalog load are coalesced into one follow-up', async () => {
+  const pending = [];
+  const { controller } = await setup({
+    catalogResult: () => new Promise((resolve) => { pending.push(resolve); }),
+  });
+  controller.refreshCatalog();
+  controller.refreshCatalog();
+  assert.equal(pending.length, 1);
+  pending[0]({ ok: true, value: catalogValue });
+  await flush();
+  assert.equal(pending.length, 2);
+  assert.equal(controller.getState().catalog.status, 'loading');
+  const small = { groups: [{ id: 'only', name: 'Only', models: [{ id: 'o1', name: 'O' }] }], failures: [] };
+  pending[1]({ ok: true, value: small });
+  await flush();
+  assert.equal(pending.length, 2);
+  assert.deepEqual(plain(row(controller, 'designer').providerOptions.map((option) => option.value)), ['only']);
+  controller.dispose();
+});
+
+test('a catalog response from before a connection reset is ignored', async () => {
   const pending = [];
   const { controller } = await setup({
     models: saved,
     catalogResult: () => new Promise((resolve) => { pending.push(resolve); }),
   });
   assert.equal(controller.getState().catalog.status, 'loading');
-  controller.refreshCatalog();
+  controller.resetConnection();
   assert.equal(pending.length, 2);
   const small = { groups: [{ id: 'only', name: 'Only', models: [{ id: 'o1', name: 'O' }] }], failures: [] };
   pending[1]({ ok: true, value: small });
@@ -655,9 +675,8 @@ test('only the bundle registers a settings entry', () => {
   assert.equal(card.children[0].type, 'summary');
   assert.equal(card.children[0].children[0].children[0], '专家模型设置');
   assert.equal(bundle.options.locale, 'specialistTeam.settings');
-  assert.ok('llm/adapters-updated' in events && 'settings/document-updated' in events && 'connection/reset' in events);
+  assert.deepEqual(Object.keys(events).sort(), ['connection/reset', 'llm/adapters-updated']);
   events['llm/adapters-updated']();
-  events['settings/document-updated']();
   events['connection/reset']();
 });
 
@@ -716,6 +735,19 @@ test('effort picker is disabled for models without reasoning efforts and incompl
   assert.equal(byLabel('Engineer: Reasoning effort').props.disabled, true);
   assert.equal(byLabel('Engineer: Model').props.disabled, false);
   assert.equal(byLabel('Researcher: Model').props.disabled, true);
+  controller.dispose();
+});
+
+test('a saved effort can be cleared without clearing a model that no longer supports it', async () => {
+  const { controller, modelsForm } = await setup({ models: { designer: { provider: 'alpha', model: 'm2', reasoningEffort: 'high' } } });
+  const effortPicker = () => findAll(expand(mod.PageBody({ t: translator('en'), controller })),
+    node => node.type === 'select' && node.props['aria-label'] === 'Designer: Reasoning effort')[0];
+  assert.equal(effortPicker().props.value, 'high');
+  assert.equal(effortPicker().props.disabled, false);
+  effortPicker().props.onChange({ target: { value: '' } });
+  await flush();
+  assert.deepEqual(plain(modelsForm.getSnapshot().value.models), { designer: { provider: 'alpha', model: 'm2' } });
+  assert.equal(effortPicker().props.disabled, true);
   controller.dispose();
 });
 

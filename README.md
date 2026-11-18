@@ -35,13 +35,13 @@ Open **Plugins → Specialist Team → Specialist model settings**. Select both 
 
 ![The Specialist Team plugin page with the model settings entry and the running dsh-team component](docs/specialist-settings.jpg)
 
-If DSH rejects a provider/model pair, enable model selection for subagents, add the exact pair to the allowed list, and open a new root conversation. Choose a reasoning effort offered by the provider for that model.
+If DSH rejects a provider/model pair, enable model selection for subagents, add the exact pair to the allowed list, and open a new root conversation. Choose a reasoning effort offered by the provider for that model. If the model stops supporting a saved effort, select **No effort preference** to clear it while keeping the provider and model.
 
 ## Let the lead coordinate only
 
 In **Specialist model settings**, turn on **Strict coordinator mode** to keep the lead focused on assigning work and using the task board. While Agent Teams is on, specialist assignments handle direct work such as reading files or running commands. The default is off, so the lead can do that work directly. Specialist calls may add to model costs in either mode.
 
-Turn strict mode off before uninstalling. If the lead previously used Programmatic Tool Calling (PTC), reopen the conversation after turning strict mode off to restore that executor.
+Open specialist conversations pause tool use while the plugin is disabled. When you enable it again, they resume with their original assignments. Turn strict mode off before uninstalling. If the lead previously used Programmatic Tool Calling (PTC), reopen the conversation after turning strict mode off to restore that executor.
 
 ## Configure from YAML
 

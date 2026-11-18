@@ -37,15 +37,18 @@ async function selectModel(ctx, parent, args, preference, signal) {
   return { provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort };
 }
 
+// Keep one guard and executor per live Agent across plugin reloads.
+const agentPolicy = Symbol.for('dsh-specialist-team.agent-policy');
+
 export function apply(ctx, config = {}) {
   const pending = new Map();
   const installed = new Set();
-  const nativeExecutors = new WeakSet();
   const lifetime = new AbortController();
   const useNativeExecutor = agent => {
-    if (nativeExecutors.has(agent)) return;
+    const policy = agent[agentPolicy];
+    if (policy.nativeExecutor) return;
     agent.ctx.tools.setExecutor(new NativeToolExecutor(agent.ctx));
-    nativeExecutors.add(agent);
+    policy.nativeExecutor = true;
   };
   const mode = () => readConfig(config.coordinatorMode) ?? 'off';
   let stopped = false;
@@ -64,21 +67,27 @@ export function apply(ctx, config = {}) {
     if (stopped || installed.has(agent)) return;
     installed.add(agent);
     const initial = pending.get(agent.id);
-    // Assignment guards belong to the Agent scope, so unloading the plugin
-    // cannot grant additional capabilities to an already-running specialist.
-    let assignment;
+    // Keep denials in the Agent scope so unloading cannot grant capabilities.
+    let policy = agent[agentPolicy];
+    if (!policy) {
+      policy = { check: () => 'Specialist policy is still loading.' };
+      agent.ctx.tools.guard(exec => exec.agent === agent ? policy.check(exec) : undefined);
+      Object.defineProperty(agent, agentPolicy, { value: policy });
+    }
     let loading = true;
-    const tools = agent.ctx.tools;
-    tools.guard(exec => {
-      if (exec.agent !== agent) return;
+    let assignment = policy.assignment;
+    policy.check = exec => {
+      if (stopped && assignment) return 'Specialist policy was unloaded. Reopen this session before continuing.';
       if (loading) return 'Specialist policy is still loading.';
-      if (!assignment) return isLead(agent) && (stopped ? lastMode : mode()) === 'strict' ? leadToolDenial(exec) : undefined;
-      if (stopped) return 'Specialist policy was unloaded. Reopen this session before continuing.';
+      if (!assignment) {
+        const strict = stopped ? lastMode === 'strict' && policy.teamEnabled : mode() === 'strict' && isLead(agent);
+        return strict ? leadToolDenial(exec) : undefined;
+      }
       if (exec.name === 'send_message') {
         return exec.arguments?.agent === 'lead' ? undefined : 'Specialists report only to Lead.';
       }
       return toolDenial(assignment, exec, ctx.workingDirectory.get(agent.session));
-    });
+    };
     const own = assignmentIn(agent, agent.id);
     assignment = own ?? initial;
     if (assignment) {
@@ -87,9 +96,11 @@ export function apply(ctx, config = {}) {
         appendPluginRecord(agent.session, ASSIGNMENT_RECORD, { memberId: agent.id, assignment });
         await ctx.sessions.flush(agent.session);
       }
-    } else if (mode() === 'strict' && isLead(agent)) {
-      useNativeExecutor(agent);
+    } else {
+      policy.teamEnabled = isLead(agent);
+      if (mode() === 'strict' && policy.teamEnabled) useNativeExecutor(agent);
     }
+    policy.assignment = assignment;
     loading = false;
   };
 
@@ -99,9 +110,12 @@ export function apply(ctx, config = {}) {
     if (mode() === 'strict') for (const agent of installed) if (isLead(agent)) useNativeExecutor(agent);
   });
   ctx.on('session/event', (session, event) => {
-    if (event.type !== 'team/mode' || !event.data.enabled || mode() !== 'strict') return;
+    if (event.type !== 'team/mode') return;
     const agent = ctx.agents.get(session.id);
-    if (agent && installed.has(agent)) useNativeExecutor(agent);
+    if (!installed.has(agent)) return;
+    // Keep the last Team mode for the guard that outlives this plugin context.
+    agent[agentPolicy].teamEnabled = event.data.enabled;
+    if (event.data.enabled && mode() === 'strict') useNativeExecutor(agent);
   });
   ctx.systemPrompt.context({
     name: 'specialist-team:routing',
@@ -110,7 +124,7 @@ export function apply(ctx, config = {}) {
     interpolate: false,
     text: ({ agent }) => {
       if (!agent) return '';
-      const assignment = assignmentIn(agent, agent.id);
+      const assignment = agent[agentPolicy]?.assignment;
       if (assignment) return rolePrompt(assignment);
       return isLead(agent) ? routingPrompt(mode()) : '';
     },

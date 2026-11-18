@@ -358,6 +358,7 @@ window.__ModuleLoader__.load({
       let disposed = false;
       let writeGeneration = 0;
       let catalogGeneration = 0;
+      let catalogRefreshPending = false;
       let state;
 
       function project() {
@@ -429,6 +430,11 @@ window.__ModuleLoader__.load({
           response = undefined;
         }
         if (disposed || generation !== catalogGeneration) return;
+        if (catalogRefreshPending) {
+          catalogRefreshPending = false;
+          catalog = { status: 'idle', value: catalog.value };
+          return loadCatalogNow();
+        }
         catalog = response && response.ok
           ? { status: 'ready', value: normalizeCatalog(response.value) }
           : { status: 'error', value: catalog.value };
@@ -436,8 +442,10 @@ window.__ModuleLoader__.load({
       }
       function refreshCatalog() {
         if (disposed) return;
-        catalogGeneration += 1;
-        catalog = { status: 'idle', value: catalog.value };
+        if (catalog.status === 'loading') {
+          catalogRefreshPending = true;
+          return;
+        }
         loadCatalogNow();
       }
       function resetConnection() {
@@ -452,6 +460,7 @@ window.__ModuleLoader__.load({
         modeError = null;
         catalog = { status: 'idle', value: EMPTY_CATALOG };
         catalogGeneration += 1;
+        catalogRefreshPending = false;
         loadCatalogNow();
       }
 
@@ -665,7 +674,7 @@ window.__ModuleLoader__.load({
       const locked = !state.models.writable || row.pending;
       const pickersLocked = locked || state.catalog.status !== 'ready';
       const name = (field) => t('fieldFor', { role: roleLabel, field: t(field) });
-      const effortLocked = pickersLocked || !row.complete || row.effortOptions.length === 0;
+      const effortLocked = pickersLocked || !row.complete || (row.effortOptions.length === 0 && !row.effort);
       const effortCurrent = row.effortMissing
         ? { value: row.effort, label: row.effort + ' · ' + t('unavailableOption') }
         : undefined;
@@ -788,7 +797,6 @@ window.__ModuleLoader__.load({
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-specialist-team: dictionaries');
       const hub = createHub();
       ctx.effect(() => ctx.remote.$on('llm/adapters-updated', () => { hub.refresh(); }), 'dsh-specialist-team: adapter invalidations');
-      ctx.effect(() => ctx.remote.$on('settings/document-updated', () => { hub.refresh(); }), 'dsh-specialist-team: settings invalidations');
       ctx.effect(() => ctx.on('connection/reset', () => { hub.reset(); }), 'dsh-specialist-team: connection generation');
       const Page = makePage(() => ({
         models: ctx.configForms.get(MODELS_NS),
