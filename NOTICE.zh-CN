@@ -4,7 +4,7 @@ dsh-specialist-team 版权归属声明
 
 本项目的原创贡献采用 Apache 许可证 2.0 版，见 LICENSE。
 
-本发行包包含来自 DeepSeek Harness 的代码：
+源码仓库在 vendor/ 归档了 DeepSeek Harness 的上游代码。0.3.0 安装包不包含该归档。
 https://github.com/deepseek-ai/deepseek-harness
 上游版本：dsh-v0.2.1-rc.3
 上游提交：1f81c047fc48fa190a683e469daa699857e9afe8

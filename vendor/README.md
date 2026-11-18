@@ -1,8 +1,10 @@
-# Upstream sources and local changes
+# Legacy team implementation and attribution
 
-English | [简体中文](README.zh-CN.md) · [Project README](../README.md)
+English | [简体中文](README.zh-CN.md) · [Current plugin guide](../README.md)
 
-The bundled code comes from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), tag [`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3), commit [`1f81c047`](https://github.com/deepseek-ai/deepseek-harness/commit/1f81c047fc48fa190a683e469daa699857e9afe8).
+This archive documents the team implementation used before version `0.3.0`. For current installation and use, see the plugin guide. Version `0.3.0` uses native DSH Agent Teams and ships without this archive.
+
+The archived code comes from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), tag [`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3), commit [`1f81c047`](https://github.com/deepseek-ai/deepseek-harness/commit/1f81c047fc48fa190a683e469daa699857e9afe8).
 
 | Upstream package | Use in this plugin |
 | --- | --- |

@@ -3,7 +3,8 @@ dsh-specialist-team
 Original contributions to this project are licensed under the Apache License,
 Version 2.0. See LICENSE.
 
-This distribution includes code from DeepSeek Harness:
+The source repository archives code from DeepSeek Harness in vendor/.
+Version 0.3.0 excludes that archive from the install package.
 https://github.com/deepseek-ai/deepseek-harness
 Upstream version: dsh-v0.2.1-rc.3
 Upstream commit: 1f81c047fc48fa190a683e469daa699857e9afe8

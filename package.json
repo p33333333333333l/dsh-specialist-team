@@ -19,6 +19,8 @@
     "cordis.patch.yml",
     "README.md",
     "README.zh-CN.md",
+    "NOTICE",
+    "NOTICE.zh-CN",
     "LICENSE"
   ],
   "scripts": {

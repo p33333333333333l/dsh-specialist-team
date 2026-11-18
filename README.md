@@ -2,44 +2,48 @@
 
 English | [简体中文](README.zh-CN.md)
 
-The lead can handle simple tasks directly or assign work to specialists with defined responsibilities, file scopes and tools. The bundle adds specialist dispatch to DSH’s native Agent Teams. DSH still provides ordinary subagents and group controls, the team interface and the shared task board.
+Assign work to specialists with a specific deliverable, file scope, and set of tools. Specialists join DSH’s native Agent Teams and share the team tree, messages, and task board with ordinary teammates.
 
-## Install
+## Install and try it
 
-Version `0.3.0` requires exactly DSH `0.2.2-rc.4` and Node.js 22 or later. If upgrading, start with the [migration steps](docs/maintenance.md#upgrade-from-02x).
+Version `0.3.0` requires **DSH `0.2.2-rc.4`** and **Node.js 22 or newer**. The canonical package is attached to the [v0.3.0 release](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.0).
 
-1. Clone this repository and run `npm pack` in the checkout. Add `"dsh-specialist-team": "file:/absolute/path/to/dsh-specialist-team-0.3.0.tgz"` to your DSH profile's dependencies, using the absolute path of the generated package.
-2. Add `dsh-specialist-team` to `dsh.profile.bundles`, install the profile dependencies and reload DSH. Check the [expected plugin entries](docs/maintenance.md#installation-checks).
-3. Enable **Agent Teams** with DSH’s session toggle in the root session. The root can then use `spawn_teammate` with a required `specialist` and structured `assignment`. Choose `context: fresh` (the default) for a fresh context or `context: fork` to inherit the lead’s transcript.
+1. Install the release package in DSH’s plugin manager using its `.tgz` URL, or run the following command for the `web` profile. Replace `web` if your installation uses a different profile.
 
-## Specialists
+   ```sh
+   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.0/dsh-specialist-team-0.3.0.tgz
+   ```
 
-| Specialist | Work |
+2. Open a root conversation and turn on **Agent Teams**. If the plugin manager reports a pending change, reload DSH first.
+3. Ask the lead to delegate a bounded task. For example, “Ask a researcher to read only the project README and report which DSH version it requires.” The lead uses `spawn_teammate` to name the role and specify the deliverable, read and write paths, tools, reviewer, and stop condition. Specialists start with fresh context by default. Use `context: fork` when the task needs the lead’s conversation history.
+
+## Choose a specialist
+
+| Role | Use it for |
 | --- | --- |
-| Designer | Designs layouts and interactions and makes assigned UI changes |
-| Researcher | Finds sources and checks evidence without editing files |
-| Engineer | Implements features and writes tests without running checks |
-| Architect | Diagnoses problems and compares designs without editing files |
-| Verifier | Independently checks results and runs only approved commands |
+| Designer | Design layouts and interactions or edit assigned UI files. |
+| Researcher | Find sources and check evidence with read-only tools. |
+| Engineer | Implement changes and write tests. Assign test execution to a verifier. |
+| Architect | Diagnose problems and compare designs with read-only tools. |
+| Verifier | Independently check the result and run commands specified in the assignment. |
 
-For independent review, the lead assigns the check to someone other than the implementer. Specialists cannot delegate. Integration, commits and publishing are the lead's responsibility. Tool restrictions apply to registered tool calls. Review what a command and its child processes can affect before approving it.
+The lead integrates results, commits, and publishes. For independent verification, give the check to a separate specialist. Tool and path restrictions apply to registered calls. Review each verification command for effects on files and subprocesses before assigning it.
 
 ## Set specialist models
 
-In the plugin manager, open **dsh-specialist-team → Specialist model settings**. Without an explicit route for the assignment or a saved role preference, the specialist inherits the lead’s model.
+Open **Plugins → Specialist Team → Specialist model settings**. Select both a provider and a model for each role you want to configure. Changes save automatically and apply to new specialists. The lead’s model is used when the assignment and the role have no model preference.
 
-- After changing the provider, select a model. The existing preference stays in effect until then. Choosing a model, changing its reasoning effort, or clearing the preference saves automatically. Only new specialists use the change.
-- Model selection requires a provider/model pair authorized for the root session. For authorization errors, check `enabled` and `allowedModels` in the subagent model selection settings. Choose a reasoning effort listed for that provider and model.
+If DSH rejects a provider/model pair, enable model selection for subagents, add the exact pair to the allowed list, and open a new root conversation. Choose a reasoning effort offered by the provider for that model.
 
-## Strict coordinator mode
+## Let the lead coordinate only
 
-With strict mode off (the default), the lead can work directly and call specialists as needed. In strict mode, the lead of an enabled Agent Teams session can coordinate, use the task board and dispatch specialists. Direct work such as file reads and shell commands is blocked. Specialist calls may add to your model bill in either mode.
+In **Specialist model settings**, turn on **Strict coordinator mode** to keep the lead focused on assigning work and using the task board. While Agent Teams is on, specialist assignments handle direct work such as reading files or running commands. The default is off, so the lead can do that work directly. Specialist calls may add to model costs in either mode.
 
-Switching affects subsequent tool calls. Turn strict mode off before unloading the bundle so the lead’s work tools remain available in the current session.
+Turn strict mode off before uninstalling. If the lead previously used Programmatic Tool Calling (PTC), reopen the conversation after turning strict mode off to restore that executor.
 
-## Manual configuration (optional)
+## Configure from YAML
 
-In the profile’s `cordis.patch.yml`, configure both settings under `dsh-team`. Replace the placeholders with a provider and model ID authorized for your session.
+For manual setup, use the `dsh-team` entry in the profile’s `cordis.patch.yml`. Replace the example provider and model IDs with a pair authorized in DSH.
 
 ```yaml
 - id: dsh-team
@@ -49,8 +53,12 @@ In the profile’s `cordis.patch.yml`, configure both settings under `dsh-team`.
       researcher: { provider: YOUR_PROVIDER, model: YOUR_MODEL }
 ```
 
-`models` accepts `designer`, `researcher`, `engineer`, `architect` and `verifier`. Each entry may include `reasoningEffort`. Both settings update live. Saving from the settings page can remove comments in the affected YAML block.
+Model keys are `designer`, `researcher`, `engineer`, `architect`, and `verifier`. Each can also set `reasoningEffort`. Saving through the settings page can remove comments in the edited YAML block.
 
-## Maintenance and license
+## Troubleshoot an upgrade from 0.2.x
 
-The release is licensed under [Apache-2.0](LICENSE). The source repository retains `vendor/` as an archive of earlier upstream code and its MIT license. The release package excludes that archive. For verification, session recovery and removal, see the [maintenance guide](docs/maintenance.md).
+If you configured a previous version manually, move model preferences from `dsh-team-tools.config.models` to `dsh-team.config.models`. Remove the overrides you added for `dsh-team-tools` and `dsh-team-service` and restore any native Team entries or delegation groups you disabled for the old version. Reload DSH, then enable Agent Teams in a new root conversation. Old team sessions remain available as history. Their membership and task lists stay with those sessions.
+
+## Source and license
+
+Run `npm install` and `npm test` in a checkout to verify the source. See the [Apache-2.0 license](LICENSE) and [attribution notice](NOTICE).

@@ -1,6 +1,8 @@
-# 来源与改动
+# 旧版团队实现与归属
 
-[English](README.md) | 简体中文 · [项目首页](../README.zh-CN.md)
+[English](README.md) | 简体中文 · [当前使用指南](../README.zh-CN.md)
+
+这里记录 `0.3.0` 之前使用的团队实现。`0.3.0` 改用 DSH 原生 Agent Teams，安装包不包含本归档。安装和使用请参阅当前指南。
 
 上游：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，版本 [`dsh-v0.2.1-rc.3`](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.1-rc.3)，提交 [`1f81c047`](https://github.com/deepseek-ai/deepseek-harness/commit/1f81c047fc48fa190a683e469daa699857e9afe8)。上游代码遵循 [MIT 许可](LICENSE-MIT)。
 
