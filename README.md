@@ -6,16 +6,18 @@ Assign work to specialists with a specific deliverable, file scope, and set of t
 
 ## Install and try it
 
-Version `0.3.1` requires **DSH `0.2.2-rc.4`** and **Node.js 22 or newer**. The canonical package is attached to the [v0.3.1 release](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.1).
+Version `0.3.2` requires **DSH `0.2.2-rc.4`** and **Node.js 22 or newer**. The canonical package is attached to the [v0.3.2 release](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.2).
 
 1. Install the release package in DSH’s plugin manager using its `.tgz` URL, or run the following command for the `web` profile. Replace `web` if your installation uses a different profile.
 
    ```sh
-   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.1/dsh-specialist-team-0.3.1.tgz
+   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.2/dsh-specialist-team-0.3.2.tgz
    ```
 
 2. Open a root conversation and turn on **Agent Teams**. If the plugin manager reports a pending change, reload DSH first.
 3. Ask the lead to delegate a bounded task. For example, “Ask a researcher to read only the project README and report which DSH version it requires.” The lead uses `spawn_teammate` to name the role and specify the deliverable, read and write paths, tools, reviewer, and stop condition. Specialists start with fresh context by default. Use `context: fork` when the task needs the lead’s conversation history.
+
+New specialists need a unique name in `<role>-<task>` form, such as `researcher-read-docs`. Use lowercase ASCII letters and digits separated by single hyphens, with up to 32 characters total. `spawn_teammate` rejects names that do not match the assigned role or this format.
 
 ## Choose a specialist
 

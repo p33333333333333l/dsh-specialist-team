@@ -6,16 +6,18 @@
 
 ## 安装并试用
 
-`0.3.1` 要求 **DSH `0.2.2-rc.4`** 和 **Node.js 22 或更高版本**。安装包见 [v0.3.1 发行页](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.1)。
+`0.3.2` 要求 **DSH `0.2.2-rc.4`** 和 **Node.js 22 或更高版本**。安装包见 [v0.3.2 发行页](https://github.com/p33333333333333l/dsh-specialist-team/releases/tag/v0.3.2)。
 
 1. 在 DSH 插件管理器中用 `.tgz` 地址安装，或运行下面的命令。如果使用其他配置（profile），请替换 `web`。
 
    ```sh
-   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.1/dsh-specialist-team-0.3.1.tgz
+   dsh plugin --profile web add https://github.com/p33333333333333l/dsh-specialist-team/releases/download/v0.3.2/dsh-specialist-team-0.3.2.tgz
    ```
 
 2. 打开根会话，开启 **Agent Teams**。如果插件管理器提示有待应用的变更，先重新加载 DSH。
 3. 给主代理一个范围明确的任务，比如「请研究员只读项目 README，告诉我它要求哪个 DSH 版本」。主代理通过 `spawn_teammate` 指定专家角色，并填写交付物、读写路径、可用工具、验收负责人和停止条件。专家默认从空白上下文开始。需要继承主代理的对话记录时，使用 `context: fork`。
+
+新建专家时，名称须唯一，并采用 `角色-任务短名` 格式，例如 `researcher-read-docs`。用单个连字符连接小写英文字母或数字组成的各段，总长不超过 32 个字符。角色或格式不符时，`spawn_teammate` 会拒绝创建。
 
 ## 选择专家
 

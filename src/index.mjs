@@ -134,7 +134,7 @@ export function apply(ctx, config = {}) {
     name: 'spawn_teammate',
     description: 'Create a scoped specialist in the native Agent Team.',
     parameters: {
-      name: text('Unique native teammate name.', true),
+      name: text('Unique name in <specialist>-<task> form, e.g. researcher-read-docs. Use lowercase letters, digits, and single hyphens, up to 32 characters total.', true),
       description: text('Short label for the native agent tree.', true),
       prompt: text('Task instructions for the specialist.', true),
       context: { type: 'string', enum: ['fresh', 'fork'], description: 'Defaults to fresh. Fork shares the Lead transcript.' },

@@ -24,6 +24,11 @@ export function specialistSpawn(base, cwd) {
     },
     async execute(args, exec) {
       const assignment = assignmentFrom(args, cwd(exec.agent));
+      const prefix = `${assignment.role}-`;
+      const name = args.name;
+      if (typeof name !== 'string' || name.length > 32 || !name.startsWith(prefix) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(name.slice(prefix.length))) {
+        throw new Error(`Use ${prefix}<task> as the specialist name (e.g. ${prefix}read-docs). Use lowercase letters, digits, and single hyphens, up to 32 characters total.`);
+      }
       return base.execute({ ...args, specialistAssignment: assignment }, exec);
     },
   };

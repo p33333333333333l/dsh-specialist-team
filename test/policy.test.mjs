@@ -156,6 +156,6 @@ test('spawn validates before calling existing model route implementation', async
   const tool = specialistSpawn(base, () => tmpdir());
   await assert.rejects(tool.execute({ specialist: 'engineer' }, {}), /structured/);
   assert.equal(called, 0);
-  const result = await tool.execute(make(tmpdir()), {});
+  const result = await tool.execute({ ...make(tmpdir()), name: 'engineer-implement' }, {});
   assert.equal(called, 1); assert.equal(result.specialistAssignment.role, 'engineer');
 });

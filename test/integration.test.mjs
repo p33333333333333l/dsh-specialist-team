@@ -134,21 +134,42 @@ function probe(ctx, name, fields) {
   return calls;
 }
 
+test('specialist names must match the assigned role and include a task slug', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, lead: createLead } = await fixture.start();
+  const lead = await createLead();
+  for (const name of ['reader', 'researcher', 'engineer-read-docs', 'researcher--read', 'researcher-read-', 'researcher-Read', `researcher-${'a'.repeat(22)}`]) {
+    await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, name), /Use researcher-<task>/);
+  }
+  assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
+
+  const name = 'researcher-read-docs';
+  assert.equal(await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, name)), `Started specialist ${name}`);
+  assert.ok(await member(ctx, lead, name));
+  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, name), /already used/);
+
+  const maxLengthName = `researcher-${'a'.repeat(20)}1`;
+  assert.equal(await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, maxLengthName)), `Started specialist ${maxLengthName}`);
+  assert.ok(await member(ctx, lead, maxLengthName));
+  await call(ctx, lead, 'subagent', ordinary('reader'));
+  assert.ok(await member(ctx, lead, 'reader'));
+});
+
 test('ordinary and specialist children share native discovery, task board and controls', options, async t => {
   const fixture = workspace(t);
   const { ctx, adapter, lead: createLead } = await fixture.start();
   const lead = await createLead();
   await call(ctx, lead, 'subagent', ordinary('ordinary'));
-  const input = specialist(fixture.root, 'reader');
+  const input = specialist(fixture.root, 'researcher-read');
   input.assignment.allowed_tools.push('list_agents', 'team_task_get', 'team_task_list');
   await call(ctx, lead, 'spawn_teammate', input);
   const worker = await member(ctx, lead, 'ordinary');
-  const reader = await member(ctx, lead, 'reader');
+  const reader = await member(ctx, lead, 'researcher-read');
   for (const caller of [lead, worker, reader]) {
     assert.equal(ctx.subagents.rootOf(caller), lead);
     const list = await call(ctx, caller, 'list_agents');
     assert.match(list, /ordinary/);
-    assert.match(list, /reader/);
+    assert.match(list, /researcher-read/);
   }
   assert.doesNotMatch(requestText(await firstRequest(adapter, worker.id)), /You are the researcher specialist/);
   const task = JSON.parse(await call(ctx, lead, 'team_task_create', { subject: 'Read files', description: 'Record observations' }));
@@ -164,9 +185,9 @@ test('ordinary and specialist children share native discovery, task board and co
   await call(ctx, reader, 'send_message', { agent: 'lead', message: 'Specialist report' });
   assert.match(requestText(await firstRequest(adapter, lead.id)), /Specialist report/);
   await firstRequest(adapter, reader.id);
-  await call(ctx, lead, 'interrupt_agent', { agent: 'reader' });
+  await call(ctx, lead, 'interrupt_agent', { agent: 'researcher-read' });
   await reader.whenIdle();
-  await call(ctx, worker, 'send_message', { agent: 'reader', message: 'Native follow-up' });
+  await call(ctx, worker, 'send_message', { agent: 'researcher-read', message: 'Native follow-up' });
   const next = await until(() => adapter.requests.find(request => request.sessionId === reader.id && requestText(request).includes('Native follow-up')), 'Reader did not continue after interrupt');
   assert.match(requestText(next), /You are the researcher specialist/);
 });
@@ -177,7 +198,7 @@ test('fresh and fork specialists retain scope through first request and cold res
   const lead = await createLead();
   const ids = [];
   for (const context of ['fresh', 'fork']) {
-    const input = specialist(fixture.root, `checker-${context}`, context);
+    const input = specialist(fixture.root, `verifier-check-${context}`, context);
     input.specialist = 'verifier';
     input.assignment.allowed_tools.push('bash');
     input.assignment.commands = ['node --test "test/check with spaces.test.mjs"', 'git diff --check'];
@@ -219,12 +240,12 @@ test('specialist scope checks the actual search path and exact verifier command'
   const grep = probe(ctx, 'grep', ['pattern', 'path']);
   const bash = probe(ctx, 'bash', ['command', 'workdir']);
   const lead = await createLead();
-  const input = specialist(fixture.root, 'checker');
+  const input = specialist(fixture.root, 'verifier-check-scope');
   input.specialist = 'verifier';
   input.assignment.allowed_tools.push('glob', 'grep', 'bash');
   input.assignment.commands = ['npm test'];
   await call(ctx, lead, 'spawn_teammate', input);
-  const child = await member(ctx, lead, 'checker');
+  const child = await member(ctx, lead, 'verifier-check-scope');
   const outside = join(fixture.root, '..', 'outside');
   for (const name of ['glob', 'grep']) {
     await call(ctx, child, name, { file_path: fixture.root, path: outside, pattern: 'file' }, /outside/);
@@ -248,7 +269,7 @@ test('assignment flush failure prevents the specialist from starting', options, 
     attempted = session.id;
     throw new Error('Simulated assignment persistence failure');
   });
-  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'failed'), /Simulated assignment persistence failure/);
+  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-test-flush'), /Simulated assignment persistence failure/);
   assert.ok(attempted);
   assert.equal(ctx.agents.list().some(agent => agent.id === attempted), false);
   assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
@@ -265,8 +286,8 @@ test('strict mode blocks ordinary delegation and local work for the enabled root
   await call(ctx, lead, 'subagent', ordinary('denied'), /Strict coordinator mode/);
   await call(ctx, lead, 'read', { file_path }, /Strict coordinator mode/);
   await call(ctx, unrelated, 'read', { file_path });
-  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'reader'));
-  const child = await member(ctx, lead, 'reader');
+  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-read'));
+  const child = await member(ctx, lead, 'researcher-read');
   await call(ctx, child, 'read', { file_path: join(fixture.root, '..', 'outside') }, /outside/);
   await call(ctx, child, 'read', { file_path });
   assert.equal(reads.length, 2);
@@ -292,8 +313,8 @@ test('live coordinator changes select native execution only for the enabled team
   updateMode('strict');
   await call(ctx, lead, 'read', { file_path }, /Strict coordinator mode/);
   await call(ctx, unrelated, 'read', { file_path }, ptcOnly);
-  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'reader'));
-  const child = await member(ctx, lead, 'reader');
+  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-read'));
+  const child = await member(ctx, lead, 'researcher-read');
   assert.match(requestText(await firstRequest(adapter, child.id)), /You are the researcher specialist/);
   await call(ctx, child, 'read', { file_path });
 
@@ -308,8 +329,8 @@ test('reloading the plugin restores scoped tools on the same live Agents', optio
   const { ctx, policyFiber, lead: createLead } = await fixture.start({ coordinatorMode: 'strict' });
   probe(ctx, 'read', ['file_path']);
   const lead = await createLead();
-  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'reader'));
-  const child = await member(ctx, lead, 'reader');
+  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-read'));
+  const child = await member(ctx, lead, 'researcher-read');
   const allowed = { file_path: fixture.root };
   const outside = { file_path: join(fixture.root, '..', 'outside') };
   await call(ctx, child, 'read', allowed);
@@ -323,7 +344,7 @@ test('reloading the plugin restores scoped tools on the same live Agents', optio
   await call(ctx, child, 'read', allowed);
   await call(ctx, child, 'read', outside, /outside/);
   await call(ctx, lead, 'read', allowed, /Strict coordinator mode/);
-  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'second'));
+  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-read-more'));
 });
 
 test('specialist routes obey native Session model policy', options, async t => {
@@ -334,12 +355,12 @@ test('specialist routes obey native Session model policy', options, async t => {
   const { ctx, adapter, lead: createLead } = await fixture.start({ models: { researcher: preferred } }, { allowedModels: routes });
   const lead = await createLead();
   assert.deepEqual(lead.session.snapshotEvents().find(event => event.type === 'subagent/model-selection-policy')?.data.allowedModels, routes);
-  await call(ctx, lead, 'spawn_teammate', { ...specialist(fixture.root, 'bad-route'), provider: 'mock', model: 'denied' }, /not allowed/);
-  await call(ctx, lead, 'spawn_teammate', { ...specialist(fixture.root, 'partial'), model: 'explicit' }, /provider and model together/);
+  await call(ctx, lead, 'spawn_teammate', { ...specialist(fixture.root, 'researcher-bad-route'), provider: 'mock', model: 'denied' }, /not allowed/);
+  await call(ctx, lead, 'spawn_teammate', { ...specialist(fixture.root, 'researcher-partial'), model: 'explicit' }, /provider and model together/);
   await call(ctx, lead, 'subagent', { ...ordinary('ordinary-bad'), provider: 'mock', model: 'denied' }, /not allowed/);
   for (const [name, override, model, effort] of [
-    ['preferred', {}, 'preferred', 'low'],
-    ['overridden', explicit, 'explicit', 'high'],
+    ['researcher-preferred', {}, 'preferred', 'low'],
+    ['researcher-overridden', explicit, 'explicit', 'high'],
   ]) {
     await call(ctx, lead, 'spawn_teammate', { ...specialist(fixture.root, name), ...override });
     const request = await firstRequest(adapter, (await member(ctx, lead, name)).id);
@@ -347,5 +368,5 @@ test('specialist routes obey native Session model policy', options, async t => {
     assert.equal(request.model, model);
     assert.equal(request.reasoningEffort, effort);
   }
-  assert.deepEqual((await ctx.subagents.listDescendants(lead.id, signal)).map(row => row.path), ['preferred', 'overridden']);
+  assert.deepEqual((await ctx.subagents.listDescendants(lead.id, signal)).map(row => row.path), ['researcher-preferred', 'researcher-overridden']);
 });
