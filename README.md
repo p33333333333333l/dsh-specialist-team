@@ -33,6 +33,8 @@ The lead integrates results, commits, and publishes. For independent verificatio
 
 Open **Plugins → Specialist Team → Specialist model settings**. Select both a provider and a model for each role you want to configure. Changes save automatically and apply to new specialists. The lead’s model is used when the assignment and the role have no model preference.
 
+![The Specialist Team plugin page with the model settings entry and the running dsh-team component](docs/specialist-settings.jpg)
+
 If DSH rejects a provider/model pair, enable model selection for subagents, add the exact pair to the allowed list, and open a new root conversation. Choose a reasoning effort offered by the provider for that model.
 
 ## Let the lead coordinate only
