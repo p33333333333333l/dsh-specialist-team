@@ -18,9 +18,17 @@ After creating a native task, pass its ID as `assignment.task_id` in `spawn_team
 
 A linked specialist can call `report_specialist_result` with `status`, `summary`, and, when applicable, `checks` and `limits`. The statuses `expected_failure`, `passed`, and `failed` require a verifier to list the checks it ran. Other statuses are `delivered`, `not_run`, and `blocked`. The receipt uses the task ID saved in the assignment and reaches the main agent as a native message. The main agent reviews the receipt and completes the matching task on the board.
 
-## Check dispatch limits
+## Opt into two-level dispatch
 
-Only the main agent can dispatch specialists. Its system prompt shows the current DSH depth cap, the total active-child cap for the root tree, and the coordinator mode. Existing work can reduce the available slots. If the active-child cap is unavailable, DSH still checks capacity when starting a teammate. For requests with nested dispatch or a concurrency target, the prompt tells the main agent to check the limits and ask for agreement before proceeding with a different arrangement.
+Users can request two-level dispatch for a task. DSH must allow a subagent depth of at least 2 and at least two active slots shared across the agent tree. The plugin stops at main agent → coordinator → specialist even if DSH allows more levels. With a depth of 1, the main agent explains the limit and asks the user before switching to direct dispatch.
+
+1. The **main agent** creates one native task card per group. Once dependencies are complete, it starts the coordinator using `spawn_specialist_coordinator`, assigns the card with `team_task_update`, and messages the coordinator to begin.
+2. The **coordinator** uses `spawn_teammate` to assign specialists within the approved paths and exact verifier commands. `max_specialists` caps the number of specialist starts over the group's lifetime. Specialists report to their own coordinator.
+3. The **coordinator** sends one group report covering checks run, coverage, and blockers. The **main agent** reviews it and closes the card. While any group card is open, the main agent uses coordination tools only.
+
+**When slots are tight**, the plugin limits new coordinator starts to leave a slot for specialists if it can read the host cap. With two slots, wait for the current card to close and its coordinator to exit before starting the next group. Other teammates share those slots, and DSH checks availability on each start.
+
+**If startup reports an error**, check the native team list first. If the coordinator is listed, continue using it. Reopen the conversation if needed to recover the link to its card. If the coordinator is absent, fix the reported cause and retry with the same card.
 
 ## Edit the profile YAML
 
@@ -38,7 +46,7 @@ Use `designer`, `researcher`, `engineer`, `architect`, or `verifier` as the role
 
 ## Restore Programmatic Tool Calling
 
-If the main agent used Programmatic Tool Calling (PTC) before strict coordinator mode was enabled, turn strict mode off and reopen the conversation to restore that tool executor.
+While strict mode is enabled or a group card is open, the main agent uses native tool calls. To restore Programmatic Tool Calling (PTC), turn strict mode off, finish any open group cards and reopen the conversation.
 
 ## Verify the source
 

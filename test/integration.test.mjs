@@ -99,6 +99,12 @@ const specialist = (root, name, context = 'fresh') => ({
     commands: [], reviewer: 'lead', stop_when: 'Report delivered',
   },
 });
+const coordinator = (root, taskId) => ({
+  ...ordinary('coordinator-alpha'), assignment: {
+    task_id: taskId, deliverable: 'Consolidated specialist report', stop_when: 'Group result delivered',
+    read_paths: [join(root, 'group')], write_paths: [], max_specialists: 1,
+  },
+});
 async function call(ctx, agent, name, args = {}, error) {
   const toolSet = await ctx.tools.resolve({ agent, signal, modelSelection: route });
   try {
@@ -151,22 +157,294 @@ test('Lead sees live dispatch limits before starting any specialist', options, a
     return prompt.contexts.find(section => section.text.includes('Specialist dispatch capability:')).text;
   };
   const beforeDispatch = await readRouting();
-  assert.match(beforeDispatch, /Lead only; specialist delegation depth is at most 1/);
+  assert.match(beforeDispatch, /limited to two delegation levels/);
   assert.match(beforeDispatch, /Host depth cap: 2/);
   assert.match(beforeDispatch, /Root tree active-child cap: 3 \(shared, not free slots\)/);
   assert.match(beforeDispatch, /Coordinator mode: strict/);
-  assert.match(beforeDispatch, /obtain approval for an alternative before dispatching/);
+  assert.match(beforeDispatch, /obtain approval before switching arrangements/);
   assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
 
   const loader = ctx.get('loader');
   const entry = [...loader.entries()].find(row => row.options.name === '@deepseek-ai/dsh-subagent');
   await loader.update(entry.id, { config: { maxDepth: 0, maxActiveSubagents: 5 } });
   const updated = await readRouting();
-  assert.match(updated, /specialist delegation depth is at most 0/);
+  assert.match(updated, /unavailable with the current host limits/);
   assert.match(updated, /Host depth cap: 0/);
   assert.match(updated, /Root tree active-child cap: 5/);
   await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-denied'), /exceeds maxDepth 0/);
   assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
+});
+
+for (const maxDepth of [0, 1, 99999]) {
+  test(`group admission with host depth ${maxDepth}`, options, async t => {
+    const fixture = workspace(t);
+    const { ctx, adapter, lead: createLead } = await fixture.start({}, { subagentConfig: { maxDepth } });
+    const lead = await createLead();
+    const task = JSON.parse(await call(ctx, lead, 'team_task_create', {
+      subject: 'Group task', description: 'Consolidate specialist results',
+    }));
+    assert.equal(task.ready, true);
+    const input = coordinator(fixture.root, task.id);
+    if (maxDepth < 2) {
+      await call(ctx, lead, 'spawn_specialist_coordinator', input, /depth/i);
+      assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
+      assert.equal(adapter.requests.length, 0);
+      assert.deepEqual(JSON.parse(await call(ctx, lead, 'team_task_get', { task_id: task.id })), task);
+    } else {
+      await call(ctx, lead, 'spawn_specialist_coordinator', input);
+      const group = await member(ctx, lead, input.name);
+      assert.match(requestText(await firstRequest(adapter, group.id)), /specialist group coordinator/);
+    }
+  });
+}
+
+test('a native group task scopes nested dispatch and routes only direct workflow receipts', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, adapter, lead: createLead } = await fixture.start({}, { subagentConfig: { maxDepth: 2 } });
+  const lead = await createLead();
+  const reads = probe(ctx, 'read', ['file_path']);
+  const createTask = (subject, blocked_by = []) => call(ctx, lead, 'team_task_create', {
+    subject, description: subject, blocked_by,
+  }).then(JSON.parse);
+  const updateTask = (task, action, owner) => call(ctx, lead, 'team_task_update', {
+    task_id: task.id, expected_revision: task.revision, action, ...(owner ? { owner } : {}),
+  }).then(JSON.parse);
+  const readTask = task_id => call(ctx, lead, 'team_task_get', { task_id }).then(JSON.parse);
+  const groupTool = 'spawn_specialist_coordinator';
+  const spawnTool = 'spawn_teammate';
+  const reportTool = 'report_specialist_result';
+  const dependency = await createTask('Prepare inputs');
+  const task = await createTask('Review the group inputs', [dependency.id]);
+  const input = coordinator(fixture.root, task.id);
+  const [groupRoot] = input.assignment.read_paths;
+  const leaf = specialist(join(groupRoot, 'review'), 'researcher-review');
+  const flat = specialist(fixture.root, 'researcher-flat');
+  const readInput = { file_path: join(leaf.assignment.read_paths[0], 'input') };
+  const leafReport = { status: 'delivered', summary: 'Scoped review observations.' };
+  const groupReport = { status: 'delivered', summary: 'Consolidated group observations.' };
+
+  await call(ctx, lead, groupTool, input, /not ready|dependenc/i);
+  assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
+  await call(ctx, lead, 'read', readInput);
+  await updateTask(await updateTask(dependency, 'reassign', 'lead'), 'complete');
+  const ready = await readTask(task.id);
+  assert.equal(ready.ready, true);
+  await call(ctx, lead, groupTool, input);
+  const group = await member(ctx, lead, input.name);
+  assert.ok(requestText(await firstRequest(adapter, group.id)).includes(`Native group task: ${task.id}`));
+  await call(ctx, group, spawnTool, leaf, /assign|own/i);
+  await call(ctx, group, reportTool, groupReport, /assign|own/i);
+  const active = await updateTask(ready, 'reassign', input.name);
+  assert.equal(active.owner, input.name);
+  await call(ctx, lead, 'read', readInput, /group|coordinator/i);
+  await call(ctx, lead, spawnTool, flat, /group|coordinator/i);
+  await call(ctx, lead, 'subagent', ordinary('ordinary-denied'), /group|coordinator/i);
+
+  await call(ctx, group, spawnTool, { ...leaf, context: 'fork' }, /fresh|fork/i);
+  await call(ctx, group, spawnTool, { ...leaf, model: route.model, provider: route.provider }, /override|model/i);
+  await call(ctx, group, spawnTool, { ...leaf, assignment: { ...leaf.assignment, task_id: task.id } }, /task_id/i);
+  await call(ctx, group, spawnTool, { ...leaf, assignment: { ...leaf.assignment, read_paths: [fixture.root] } }, /read_paths/i);
+  await call(ctx, group, spawnTool, {
+    ...leaf, name: 'engineer-review', specialist: 'engineer', assignment: { ...leaf.assignment, write_paths: leaf.assignment.read_paths },
+  }, /write_paths/i);
+  await call(ctx, group, spawnTool, {
+    ...leaf, name: 'verifier-review', specialist: 'verifier', assignment: { ...leaf.assignment, commands: ['npm test'] },
+  }, /commands/i);
+
+  await call(ctx, group, spawnTool, leaf);
+  const childPath = `${input.name}/${leaf.name}`;
+  const child = await member(ctx, lead, childPath);
+  await firstRequest(adapter, child.id);
+  await call(ctx, group, spawnTool, { ...leaf, name: 'researcher-extra' }, /max_specialists|limit|maximum|bound|capacity/i);
+  assert.deepEqual((await ctx.subagents.listDescendants(lead.id, signal)).map(({ path, id, parentId, depth }) => ({
+    path, id, parentId, depth,
+  })), [
+    { path: input.name, id: group.id, parentId: lead.id, depth: 1 },
+    { path: childPath, id: child.id, parentId: group.id, depth: 2 },
+  ]);
+  await call(ctx, child, 'read', readInput);
+  await call(ctx, child, 'read', { file_path: join(groupRoot, 'other-input') }, /outside/i);
+  await call(ctx, child, 'subagent', ordinary('grandchild'), /does not allow|unknown tool/i);
+  await call(ctx, child, spawnTool, { ...leaf, name: 'researcher-grandchild' }, /does not allow|unknown tool/i);
+  await call(ctx, child, 'send_message', { agent: 'lead', message: 'Bypass the coordinator' }, /coordinator|does not allow|unknown tool/i);
+  assert.equal(reads.length, 2);
+
+  const receipts = agent => agent.session.snapshotEvents()
+    .filter(event => event.type === 'agent/inbox/spliced')
+    .flatMap(event => event.data.inserted)
+    .filter(message => message.source?.kind === 'agent-message')
+    .map(message => ({ senderId: message.source.senderSessionId, text: message.content.map(block => block.text).join('\n') }));
+  await call(ctx, child, reportTool, leafReport);
+  const groupReceipts = receipts(group);
+  assert.deepEqual(groupReceipts.map(receipt => receipt.senderId), [child.id]);
+  assert.ok(groupReceipts[0].text.includes(leafReport.summary));
+  assert.deepEqual(receipts(lead), []);
+  await call(ctx, group, reportTool, groupReport);
+  const leadReceipts = receipts(lead);
+  assert.deepEqual(leadReceipts.map(receipt => receipt.senderId), [group.id]);
+  assert.ok(leadReceipts[0].text.includes(task.id));
+  assert.ok(leadReceipts[0].text.includes(groupReport.summary));
+  assert.deepEqual(await readTask(task.id), active);
+  await call(ctx, lead, spawnTool, flat, /group|coordinator/i);
+
+  assert.equal((await updateTask(active, 'complete')).status, 'completed');
+  await call(ctx, lead, 'read', readInput);
+  await call(ctx, lead, spawnTool, flat);
+  assert.ok(await member(ctx, lead, flat.name));
+  await call(ctx, lead, 'subagent', ordinary('ordinary-restored'));
+  assert.ok(await member(ctx, lead, 'ordinary-restored'));
+});
+
+test('a group start blocks parallel ordinary delegation', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig: { maxDepth: 2 } });
+  const lead = await createLead();
+  const task = await ctx.agentTeams.createTask(lead, { subject: 'Group', description: 'Coordinate work' });
+  const group = coordinator(fixture.root, task.id);
+  const toolSet = await ctx.tools.resolve({ agent: lead, signal, modelSelection: route });
+  try {
+    const { results } = await ctx.tools.execute({
+      agent: lead, signal, toolSet, calls: [
+        ['spawn_specialist_coordinator', group], ['subagent', ordinary('ordinary-parallel')],
+      ].map(([name, args]) => ({ type: 'tool-call', id: randomUUID(), name, arguments: JSON.stringify(args) })),
+    });
+    assert.equal(results[0].result.isError, false);
+    assert.equal(results[1].result.isError, true);
+    assert.match(results[1].result.content[0].text, /Strict coordinator mode/);
+    assert.deepEqual((await ctx.subagents.listDescendants(lead.id, signal)).map(entry => entry.path), [group.name]);
+  } finally {
+    toolSet.dispose();
+  }
+});
+
+test('a conflicting Lead executor rejects the group before native startup', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig: { maxDepth: 2 } });
+  const lead = await createLead();
+  lead.ctx.tools.setExecutor(new Native.NativeToolExecutor(lead.ctx));
+  const task = await ctx.agentTeams.createTask(lead, { subject: 'Group', description: 'Coordinate work' });
+  await call(ctx, lead, 'spawn_specialist_coordinator', coordinator(fixture.root, task.id), /Only one tool executor/);
+  assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
+  assert.equal(ctx.agentTeams.getTask(lead, task.id).ready, true);
+});
+
+test('group startup recovery uses prepared links only for native catalog entries', options, async t => {
+  const fixture = workspace(t);
+  const subagentConfig = { maxDepth: 2, maxActiveSubagents: 2 };
+  const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig });
+  const lead = await createLead();
+  const task = await ctx.agentTeams.createTask(lead, { subject: 'Group', description: 'Coordinate work' });
+  const input = coordinator(fixture.root, task.id);
+  const dropAssignment = ctx.on('session/flush', session => {
+    if (session.id !== lead.id && session.snapshotEvents().some(event => pluginRecordOf(event)?.type === ASSIGNMENT_RECORD)) {
+      throw new Error('Simulated coordinator assignment checkpoint failure');
+    }
+  });
+  await call(ctx, lead, 'spawn_specialist_coordinator', input, /Simulated coordinator assignment checkpoint failure/);
+  dropAssignment();
+  assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
+  await ctx.fiber.dispose();
+
+  const restarted = await fixture.start({}, { subagentConfig });
+  const { agent: retryLead } = await restarted.ctx.agents.resume({ resumeSessionId: lead.id, agentOptions: route });
+  const failCatalogCheckpoint = restarted.ctx.on('session/flush', session => {
+    if (session === retryLead.session && session.snapshotEvents().some(event => event.type === 'subagent/catalog')) {
+      throw new Error('Simulated error after the native catalog was appended');
+    }
+  });
+  await call(restarted.ctx, retryLead, 'spawn_specialist_coordinator', input, /Coordinator coordinator-alpha started.*saving the native catalog failed/);
+  failCatalogCheckpoint();
+  const coordinatorId = await restarted.ctx.subagents.resolveName(retryLead, input.name, signal);
+  await restarted.ctx.agentTeams.updateTask(retryLead, {
+    action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: coordinatorId,
+  });
+  await restarted.ctx.fiber.dispose();
+
+  const recovered = await fixture.start({}, { subagentConfig });
+  const { agent: recoveredLead } = await recovered.ctx.agents.resume({ resumeSessionId: lead.id, agentOptions: route });
+  await call(recovered.ctx, recoveredLead, 'spawn_specialist_coordinator', input, /A coordinator was already started/);
+  await call(recovered.ctx, recoveredLead, 'send_message', { agent: input.name, message: 'Resume the assigned group.' });
+  const recoveredGroup = await member(recovered.ctx, recoveredLead, input.name);
+  assert.equal(recoveredGroup.id, coordinatorId);
+  await call(recovered.ctx, recoveredGroup, 'spawn_teammate', specialist(input.assignment.read_paths[0], 'researcher-recovered'));
+});
+
+test('two root-tree slots admit one group at a time and let both groups run a specialist', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, adapter, lead: createLead } = await fixture.start({}, {
+    subagentConfig: { maxDepth: 2, maxActiveSubagents: 2 },
+  });
+  const lead = await createLead();
+  const first = await ctx.agentTeams.createTask(lead, { subject: 'First group', description: 'Coordinate first group' });
+  const second = await ctx.agentTeams.createTask(lead, { subject: 'Second group', description: 'Coordinate second group' });
+  const a = coordinator(fixture.root, first.id);
+  const b = { ...coordinator(fixture.root, second.id), name: 'coordinator-beta' };
+  await call(ctx, lead, 'spawn_specialist_coordinator', a);
+  await call(ctx, lead, 'spawn_specialist_coordinator', b, /Keep this group queued/);
+  assert.deepEqual(await ctx.agentTeams.getTask(lead, second.id), second);
+
+  const group = await member(ctx, lead, a.name);
+  const assigned = await ctx.agentTeams.updateTask(lead, {
+    action: 'reassign', taskId: first.id, expectedRevision: first.revision, owner: group.id,
+  });
+  await call(ctx, group, 'spawn_teammate', specialist(a.assignment.read_paths[0], 'researcher-first'));
+  const childId = await ctx.subagents.resolveName(lead, `${a.name}/researcher-first`, signal);
+  await firstRequest(adapter, childId);
+  ctx.subagents.interrupt(childId, { kind: 'user' });
+  await until(() => !ctx.agents.get(childId), 'The first specialist did not release its slot');
+  await ctx.agentTeams.updateTask(lead, { action: 'complete', taskId: first.id, expectedRevision: assigned.revision });
+  await call(ctx, lead, 'spawn_specialist_coordinator', b, /Keep this group queued/);
+  const stream = adapter.stream.bind(adapter);
+  adapter.stream = async function* (request) {
+    if (request.sessionId !== group.id) yield* stream(request);
+  };
+  ctx.subagents.interrupt(group.id, { kind: 'user' });
+  await group.whenIdle();
+  if (ctx.agents.get(group.id)) {
+    await call(ctx, lead, 'send_message', { agent: a.name, message: 'Finish this group.' });
+  }
+  await until(() => !ctx.agents.get(group.id), 'The first coordinator did not release its slot');
+
+  await call(ctx, lead, 'spawn_specialist_coordinator', b);
+  const nextGroup = await member(ctx, lead, b.name);
+  await ctx.agentTeams.updateTask(lead, {
+    action: 'reassign', taskId: second.id, expectedRevision: second.revision, owner: nextGroup.id,
+  });
+  await call(ctx, nextGroup, 'spawn_teammate', specialist(b.assignment.read_paths[0], 'researcher-second'));
+});
+
+test('group specialist budget survives concurrent starts and cold recovery', options, async t => {
+  const fixture = workspace(t);
+  const subagentConfig = { maxDepth: 99999, maxActiveSubagents: 8 };
+  const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig });
+  const lead = await createLead();
+  const task = JSON.parse(await call(ctx, lead, 'team_task_create', {
+    subject: 'Coordinate one specialist', description: 'Keep the same start budget across restart',
+  }));
+  const input = coordinator(fixture.root, task.id);
+  const groupRoot = input.assignment.read_paths[0];
+  await call(ctx, lead, 'spawn_specialist_coordinator', input);
+  const group = await member(ctx, lead, input.name);
+  await call(ctx, lead, 'team_task_update', {
+    action: 'reassign', task_id: task.id, expected_revision: task.revision, owner: input.name,
+  });
+  const launches = await Promise.allSettled(['researcher-first', 'researcher-second'].map(name =>
+    call(ctx, group, 'spawn_teammate', specialist(groupRoot, name))));
+  assert.equal(launches.filter(result => result.status === 'fulfilled').length, 1);
+  assert.match(launches.find(result => result.status === 'rejected').reason.message, /specialist start limit/);
+  const descendants = await ctx.subagents.listDescendants(lead.id, signal);
+  const child = descendants.find(entry => entry.depth === 2);
+  assert.equal(child.parentId, group.id);
+  await call(ctx, ctx.agents.get(child.id), 'spawn_teammate', specialist(groupRoot, 'researcher-grandchild'), /does not allow|unknown tool/i);
+  assert.deepEqual(descendants.map(entry => entry.depth), [1, 2]);
+
+  await ctx.fiber.dispose();
+  const revived = await fixture.start({}, { subagentConfig });
+  const { agent: restoredLead } = await revived.ctx.agents.resume({ resumeSessionId: lead.id, agentOptions: route });
+  await call(revived.ctx, restoredLead, 'send_message', { agent: input.name, message: 'Recover the group.' });
+  const restoredGroup = await member(revived.ctx, restoredLead, input.name);
+  await call(revived.ctx, restoredLead, 'spawn_teammate', specialist(groupRoot, 'researcher-flat'), /group coordination/i);
+  await call(revived.ctx, restoredGroup, 'spawn_teammate', specialist(groupRoot, 'researcher-third'), /specialist start limit/);
 });
 
 test('specialist names must match the assigned role and include a task slug', options, async t => {
@@ -466,6 +744,41 @@ test('live coordinator changes select native execution only for the enabled team
   await call(ctx, lead, 'read', { file_path });
   await call(ctx, unrelated, 'read', { file_path }, ptcOnly);
   assert.equal(reads.length, 2);
+});
+
+test('reopening a restored group or enabling its team makes Lead coordination callable in PTC', options, async t => {
+  const fixture = workspace(t);
+  const subagentConfig = { maxDepth: 2 };
+  const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig });
+  const lead = await createLead();
+  const task = await ctx.agentTeams.createTask(lead, { subject: 'Restored group', description: 'Keep coordination callable' });
+  const group = coordinator(fixture.root, task.id);
+  await call(ctx, lead, 'spawn_specialist_coordinator', group);
+  const assigned = await ctx.agentTeams.updateTask(lead, {
+    action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: (await member(ctx, lead, group.name)).id,
+  });
+  const completed = await ctx.agentTeams.updateTask(lead, {
+    action: 'complete', taskId: task.id, expectedRevision: assigned.revision,
+  });
+  await ctx.fiber.dispose();
+
+  const revived = await fixture.start({}, { ptc: true, subagentConfig });
+  const { agent: restoredLead } = await revived.ctx.agents.resume({ resumeSessionId: lead.id, agentOptions: route });
+  await call(revived.ctx, restoredLead, 'team_task_get', { task_id: task.id }, /only `run_code` is callable directly/);
+  await revived.ctx.agentTeams.updateTask(restoredLead, {
+    action: 'reopen', taskId: task.id, expectedRevision: completed.revision,
+  });
+  await call(revived.ctx, restoredLead, 'team_task_get', { task_id: task.id });
+  await revived.ctx.agentTeams.setEnabled(restoredLead, false);
+  await revived.ctx.fiber.dispose();
+
+  const disabled = await fixture.start({}, { ptc: true, subagentConfig });
+  const { agent: disabledLead } = await disabled.ctx.agents.resume({ resumeSessionId: lead.id, agentOptions: route });
+  probe(disabled.ctx, 'read', ['file_path']);
+  await call(disabled.ctx, disabledLead, 'read', { file_path: fixture.root }, /only `run_code` is callable directly/);
+  await disabled.ctx.agentTeams.setEnabled(disabledLead, true);
+  await call(disabled.ctx, disabledLead, 'team_task_get', { task_id: task.id });
+  await call(disabled.ctx, disabledLead, 'read', { file_path: fixture.root }, /Strict coordinator mode/);
 });
 
 test('reloading the plugin restores scoped tools on the same live Agents', options, async t => {
