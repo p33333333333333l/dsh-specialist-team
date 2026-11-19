@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { appendPluginRecord } from '@deepseek-ai/dsh-session';
-import { parentAgentOptionsForDelegation } from '@deepseek-ai/dsh-subagent';
+import { appendPluginRecord, pluginRecordOf } from '@deepseek-ai/dsh-session';
+import { parentAgentOptionsForDelegation, resolveChildDepth } from '@deepseek-ai/dsh-subagent';
 import { NativeToolExecutor } from '@deepseek-ai/dsh-tool-executor-native';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import z from '@deepseek-ai/schemastery';
-import { ASSIGNMENT_RECORD, ROLES, assignmentIn, leadToolDenial, rolePrompt, toolDenial } from './policy.mjs';
+import {
+  ASSIGNMENT_RECORD, ROLES, assignmentIn, coordinatorAssignmentFrom, leadToolDenial, rolePrompt,
+  scopedAssignment, toolDenial,
+} from './policy.mjs';
 import { COORDINATOR_MODES, routingPrompt } from './prompts.mjs';
 import { specialistSpawn } from './spawn.mjs';
 
@@ -21,6 +24,10 @@ const text = (description, required = false) => ({ type: 'string', description, 
 const CHECK_STATUSES = ['expected_failure', 'passed', 'failed'];
 const RESULT_STATUSES = ['delivered', ...CHECK_STATUSES, 'not_run', 'blocked'];
 const REPORT_TOOL = 'report_specialist_result';
+const GROUP_TOOL = 'spawn_specialist_coordinator';
+const GROUP_RECORD = 'plugin:specialist-team/group';
+const GROUP_TOOLS = new Set(['spawn_teammate', REPORT_TOOL, 'team_task_get', 'wait_agent']);
+const pathList = { type: 'array', required: true, items: { type: 'string' } };
 
 function rootActiveCap(ctx) {
   // RC4 exposes depth on SubagentRuntime and the active cap on its loader entry.
@@ -69,6 +76,45 @@ const agentPolicy = Symbol.for('dsh-specialist-team.agent-policy');
 export function apply(ctx, config = {}) {
   const pending = new Map();
   const installed = new Set();
+  const startingGroups = new Set();
+  const groupStarts = new Map();
+  const serializeGroupStart = async (id, run) => {
+    const previous = groupStarts.get(id);
+    const next = (previous ?? Promise.resolve()).then(run);
+    const settled = next.then(() => {}, () => {});
+    groupStarts.set(id, settled);
+    try { return await next; }
+    finally { if (groupStarts.get(id) === settled) groupStarts.delete(id); }
+  };
+  const groupFor = (lead, id) => lead[agentPolicy]?.groups?.get(id);
+  const coordinatorOf = agent => {
+    const assignment = agent?.[agentPolicy]?.assignment;
+    return assignment?.role === 'coordinator' ? assignment : undefined;
+  };
+  const isOpenGroupTask = (lead, taskId) => {
+    const { status } = ctx.agentTeams.getTask(lead, taskId);
+    return status !== 'completed' && status !== 'deleted';
+  };
+  const hasOpenGroup = lead => [...(lead[agentPolicy]?.groups?.values() ?? [])]
+    .some(taskId => isOpenGroupTask(lead, taskId));
+  const preflightGroup = lead => {
+    const depth = ctx.subagents.resolveMaxDepth();
+    const coordinatorDepth = resolveChildDepth(lead, undefined);
+    if (depth !== undefined && depth <= coordinatorDepth) {
+      throw new Error(`Two-level coordination needs depth ${coordinatorDepth + 1}; the host cap is ${depth}. Ask the user before switching to flat dispatch.`);
+    }
+    const cap = rootActiveCap(ctx);
+    if (cap === undefined) return;
+    if (cap < 2) {
+      throw new Error(`Two-level coordination needs two root-tree slots; the host cap is ${cap}. Ask the user before switching to flat dispatch.`);
+    }
+    // Leave a specialist slot even if every open group wakes up at once.
+    const allocated = [...lead[agentPolicy].groups].filter(([id, taskId]) =>
+      ctx.agents.get(id) !== undefined || isOpenGroupTask(lead, taskId));
+    if (allocated.length >= cap - 1) {
+      throw new Error(`Keep this group queued. With ${cap} root-tree slots, finish an existing group and let its coordinator exit before starting another so specialists have room to run.`);
+    }
+  };
   const lifetime = new AbortController();
   const useNativeExecutor = agent => {
     const policy = agent[agentPolicy];
@@ -86,6 +132,21 @@ export function apply(ctx, config = {}) {
     } catch (error) {
       if (error.code !== 'UNAUTHORIZED') throw error;
       return false;
+    }
+  };
+
+  const start = async (parent, args, assignment, signal, agentOptions, childId = randomUUID()) => {
+    pending.set(childId, assignment);
+    try {
+      return await ctx.subagents.startActivation({
+        childId, parent, name: args.name, label: args.description,
+        provider: args.context === 'fork' ? 'fork' : 'spawn', cwd: assignment.cwd,
+        prompt: [{ type: 'text', text: args.prompt }],
+        maxDepth: ctx.subagents.resolveMaxDepth(), signal, delivery: 'parent',
+        ...agentOptions === undefined ? {} : { agentOptions },
+      });
+    } finally {
+      pending.delete(childId);
     }
   };
 
@@ -107,9 +168,19 @@ export function apply(ctx, config = {}) {
       if (loading) return 'Specialist policy is still loading.';
       if (!assignment) {
         const strict = stopped ? lastMode === 'strict' && policy.teamEnabled : mode() === 'strict' && isLead(agent);
+        if (policy.teamEnabled && (startingGroups.has(agent.id) || hasOpenGroup(agent))) {
+          if (exec.name === 'spawn_teammate') return `During group coordination, dispatch through ${GROUP_TOOL}.`;
+          return leadToolDenial(exec);
+        }
         return strict ? leadToolDenial(exec) : undefined;
       }
-      if (exec.name === REPORT_TOOL && assignment.task_id !== undefined) return;
+      if (assignment.role === 'coordinator') {
+        if (!GROUP_TOOLS.has(exec.name)) return 'Group coordinators can only dispatch specialists, check their group card, and report.';
+        if (exec.name === 'team_task_get' && exec.arguments?.task_id !== assignment.task_id) return 'Only your group task card is available.';
+        return;
+      }
+      if (exec.name === REPORT_TOOL && (assignment.task_id !== undefined || assignment.coordinator_id !== undefined)) return;
+      if (assignment.coordinator_id && exec.name === 'send_message') return 'Use report_specialist_result to report to your coordinator.';
       if (exec.name === 'send_message') {
         return exec.arguments?.agent === 'lead' ? undefined : 'Specialists report only to Lead.';
       }
@@ -125,7 +196,18 @@ export function apply(ctx, config = {}) {
       }
     } else {
       policy.teamEnabled = isLead(agent);
-      if (mode() === 'strict' && policy.teamEnabled) useNativeExecutor(agent);
+      policy.groups = new Map();
+      const cataloged = new Set();
+      for (const event of agent.session.snapshotEvents(agent.session.inheritedEventCount ?? 0)) {
+        if (event.type === 'subagent/catalog') cataloged.add(event.data.childId);
+        const record = pluginRecordOf(event);
+        if (record?.type === GROUP_RECORD && record.data?.leadId === agent.id) {
+          policy.groups.set(record.data.coordinatorId, record.data.taskId);
+        }
+      }
+      // A prepared group is usable only after DSH commits the native child.
+      for (const id of policy.groups.keys()) if (!cataloged.has(id)) policy.groups.delete(id);
+      if (policy.teamEnabled && (mode() === 'strict' || hasOpenGroup(agent))) useNativeExecutor(agent);
     }
     policy.assignment = assignment;
     loading = false;
@@ -137,12 +219,18 @@ export function apply(ctx, config = {}) {
     if (mode() === 'strict') for (const agent of installed) if (isLead(agent)) useNativeExecutor(agent);
   });
   ctx.on('session/event', (session, event) => {
-    if (event.type !== 'team/mode') return;
+    if (event.type !== 'team/mode' && event.type !== 'team/task') return;
     const agent = ctx.agents.get(session.id);
     if (!installed.has(agent)) return;
-    // Keep the last Team mode for the guard that outlives this plugin context.
-    agent[agentPolicy].teamEnabled = event.data.enabled;
-    if (event.data.enabled && mode() === 'strict') useNativeExecutor(agent);
+    const policy = agent[agentPolicy];
+    if (event.type === 'team/mode') {
+      // Keep the last Team mode for the guard that outlives this plugin context.
+      policy.teamEnabled = event.data.enabled;
+      if (policy.teamEnabled && (mode() === 'strict' || hasOpenGroup(agent))) useNativeExecutor(agent);
+    } else if (policy.teamEnabled && event.data.task.status !== 'completed' && event.data.task.status !== 'deleted'
+        && [...(policy.groups?.values() ?? [])].includes(event.data.task.id)) {
+      useNativeExecutor(agent);
+    }
   });
   ctx.systemPrompt.context({
     name: 'specialist-team:routing',
@@ -159,7 +247,7 @@ export function apply(ctx, config = {}) {
 
   ctx.tools.register(defineTool({
     name: REPORT_TOOL,
-    description: 'Send a concise result for your assigned native task to Lead.',
+    description: 'Send a concise result to your immediate coordinator, or to Lead for a native task.',
     parameters: {
       status: { type: 'string', required: true, enum: RESULT_STATUSES, description: 'Outcome of the deliverable or check.' },
       summary: text('Key finding or deliverable, including paths when useful.', true),
@@ -168,31 +256,103 @@ export function apply(ctx, config = {}) {
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { messageId: text('Accepted inbox message ID.', true) } },
-      render: (_args, value) => [{ type: 'text', text: `Sent result to Lead (${value.messageId}).` }],
+      render: (_args, value) => [{ type: 'text', text: `Sent result (${value.messageId}).` }],
     },
     async execute({ status, summary, checks = [], limits }, exec) {
       const specialist = exec.agent;
       const assignment = specialist?.[agentPolicy]?.assignment;
-      if (assignment?.task_id === undefined) throw new Error('A linked native task is required.');
+      if (assignment?.task_id === undefined && assignment?.coordinator_id === undefined) throw new Error('A linked native task or coordinator is required.');
       const lead = ctx.subagents.rootOf(specialist);
       if (!isLead(lead)) throw new Error('Agent Teams must be enabled to report a task result.');
-      requireTask(ctx, lead, assignment.task_id, specialist);
+      const coordinatorId = assignment.coordinator_id;
+      if (coordinatorId) {
+        const taskId = groupFor(lead, coordinatorId);
+        if (!taskId) throw new Error('The specialist group is unavailable.');
+        requireTask(ctx, lead, taskId, { id: coordinatorId });
+      } else {
+        requireTask(ctx, lead, assignment.task_id, specialist);
+      }
       if (!summary.trim() || checks.some(check => !check.trim())) {
         throw new Error('Provide a non-empty summary and concrete check descriptions.');
       }
       if (CHECK_STATUSES.includes(status) && (assignment.role !== 'verifier' || !checks.length)) {
         throw new Error(`${status} requires an independent verifier and at least one check.`);
       }
+      const targetId = coordinatorId ?? lead.id;
+      const subject = coordinatorId ? ctx.subagents.namesOf(specialist).self : assignment.task_id;
       const result = [
-        `Specialist result for ${assignment.task_id}: ${status}`,
+        `Specialist result for ${subject}: ${status}`,
         summary.trim(),
         ...checks.map(check => `Check: ${check.trim()}`),
         ...(limits?.trim() ? [`Limits: ${limits.trim()}`] : []),
       ].join('\n');
-      const messageId = await ctx.subagents.sendMessage(specialist, lead.id, [{ type: 'text', text: result }], { signal: exec.signal });
+      const messageId = await ctx.subagents.sendMessage(specialist, targetId, [{ type: 'text', text: result }], { signal: exec.signal });
       return { messageId };
     },
-  }), { when: ({ agent }) => !stopped && agent?.[agentPolicy]?.assignment?.task_id !== undefined });
+  }), { when: ({ agent }) => {
+    const assignment = agent?.[agentPolicy]?.assignment;
+    return !stopped && (assignment?.task_id !== undefined || assignment?.coordinator_id !== undefined);
+  } });
+
+  ctx.tools.register(defineTool({
+    name: GROUP_TOOL,
+    description: 'Start a fresh coordinator for one native group task. Use only when the user opts into two-level dispatch.',
+    parameters: {
+      name: text('Unique coordinator-<group> name, up to 32 characters.', true),
+      description: text('Short label for the native agent tree.', true),
+      prompt: text('Group instructions and acceptance criteria.', true),
+      assignment: {
+        type: 'object', required: true, additionalProperties: false,
+        properties: {
+          task_id: text('Ready native task ID for the group.', true),
+          deliverable: text('Group deliverable.', true),
+          stop_when: text('Stop after the group meets this condition or is blocked.', true),
+          read_paths: { ...pathList, description: 'Allowed read paths for the group.' },
+          write_paths: { ...pathList, description: 'Allowed write paths for the group.' },
+          commands: { type: 'array', items: { type: 'string' }, description: 'Exact verifier commands permitted in this group.' },
+          max_specialists: { type: 'integer', required: true, description: 'Positive total of fresh specialist starts allowed in this group.' },
+        },
+      },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { name: text('Native coordinator name.', true) } },
+      render: (_args, value) => [{ type: 'text', text: `Started ${value.name}. Reassign the group card, then message the coordinator to begin.` }],
+    },
+    async execute(args, exec) {
+      const lead = exec.agent;
+      if (stopped || !isLead(lead)) throw new Error('Only the native Team Lead can start a group coordinator.');
+      if (args.name.length > 32 || !/^coordinator-[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(args.name)) {
+        throw new Error('Use coordinator-<group> with lowercase letters, digits, and single hyphens, up to 32 characters.');
+      }
+      const assignment = coordinatorAssignmentFrom(args.assignment, ctx.workingDirectory.get(lead.session));
+      const taskId = assignment.task_id;
+      const groups = lead[agentPolicy].groups;
+      if (startingGroups.has(lead.id)) throw new Error('Wait for the current coordinator start to finish.');
+      if ([...groups.values()].includes(taskId)) throw new Error(`A coordinator was already started for ${taskId}. Continue that coordinator or use a new group card.`);
+      preflightGroup(lead);
+      requireTask(ctx, lead, taskId);
+      const signal = AbortSignal.any([exec.signal, lifetime.signal]);
+      const childId = randomUUID();
+      startingGroups.add(lead.id);
+      try {
+        signal.throwIfAborted();
+        useNativeExecutor(lead);
+        appendPluginRecord(lead.session, GROUP_RECORD, { leadId: lead.id, coordinatorId: childId, taskId });
+        await ctx.sessions.flush(lead.session);
+        requireTask(ctx, lead, taskId);
+        const started = await start(lead, args, assignment, signal, undefined, childId);
+        groups.set(childId, taskId);
+        try {
+          await ctx.sessions.flush(lead.session);
+        } catch (error) {
+          throw new Error(`Coordinator ${started.name} started for ${taskId}, but saving the native catalog failed. Check the team before retrying.`, { cause: error });
+        }
+        return { name: started.name };
+      } finally {
+        startingGroups.delete(lead.id);
+      }
+    },
+  }), { when: ({ agent }) => !stopped && isLead(agent) });
 
   ctx.tools.register(defineTool(specialistSpawn({
     name: 'spawn_teammate',
@@ -213,31 +373,43 @@ export function apply(ctx, config = {}) {
     isConcurrencySafe: () => true,
     async execute(args, exec) {
       const parent = exec.agent;
-      if (!isLead(parent)) throw new Error('Enable Agent Teams in the root session before spawning a specialist.');
+      const coordinator = coordinatorOf(parent);
       const signal = AbortSignal.any([exec.signal, lifetime.signal]);
+      if (coordinator) {
+        if (args.context === 'fork') throw new Error('Group specialists must use fresh context.');
+        if ([args.provider, args.model, args.reasoning_effort].some(value => value !== undefined)) {
+          throw new Error('Group coordinators cannot override Lead-configured specialist model routes.');
+        }
+        const assignment = scopedAssignment(args.specialistAssignment, coordinator, parent.id);
+        return serializeGroupStart(parent.id, async () => {
+          signal.throwIfAborted();
+          const lead = ctx.subagents.rootOf(parent);
+          if (!isLead(lead) || groupFor(lead, parent.id) !== coordinator.task_id) throw new Error('The specialist group is unavailable.');
+          resolveChildDepth(parent, ctx.subagents.resolveMaxDepth());
+          requireTask(ctx, lead, coordinator.task_id, parent);
+          const descendants = await ctx.subagents.listDescendants(parent.id, signal);
+          if (descendants.filter(entry => entry.depth === 1).length >= coordinator.max_specialists) {
+            throw new Error(`This group reached its ${coordinator.max_specialists}-specialist start limit.`);
+          }
+          const agentOptions = await selectModel(ctx, parent, args, readConfig(config.models)?.[args.specialist], signal);
+          signal.throwIfAborted();
+          requireTask(ctx, lead, coordinator.task_id, parent);
+          const started = await start(parent, args, assignment, signal, agentOptions);
+          return { name: started.name };
+        });
+      }
+      if (!isLead(parent)) throw new Error('Enable Agent Teams in the root session before spawning a specialist.');
       const agentOptions = await selectModel(ctx, parent, args, readConfig(config.models)?.[args.specialist], signal);
       signal.throwIfAborted();
-      if (stopped || !isLead(parent)) throw new Error('Specialist dispatch is no longer available in this session.');
-      const taskId = args.specialistAssignment.task_id;
-      if (taskId !== undefined) requireTask(ctx, parent, taskId);
-      const childId = randomUUID();
-      pending.set(childId, args.specialistAssignment);
-      try {
-        const started = await ctx.subagents.startActivation({
-          childId, parent, name: args.name, label: args.description,
-          provider: args.context === 'fork' ? 'fork' : 'spawn',
-          cwd: args.specialistAssignment.cwd,
-          prompt: [{ type: 'text', text: args.prompt }],
-          maxDepth: ctx.subagents.resolveMaxDepth(),
-          signal, delivery: 'parent',
-          ...agentOptions === undefined ? {} : { agentOptions },
-        });
-        return { name: started.name };
-      } finally {
-        pending.delete(childId);
+      if (stopped || !isLead(parent) || startingGroups.has(parent.id) || hasOpenGroup(parent)) {
+        throw new Error('Direct specialist dispatch is unavailable during group coordination.');
       }
+      const assignment = args.specialistAssignment;
+      if (assignment.task_id !== undefined) requireTask(ctx, parent, assignment.task_id);
+      const started = await start(parent, args, assignment, signal, agentOptions);
+      return { name: started.name };
     },
-  }, agent => ctx.workingDirectory.get(agent.session))), { when: ({ agent }) => isLead(agent) });
+  }, agent => ctx.workingDirectory.get(agent.session))), { when: ({ agent }) => !stopped && (isLead(agent) || !!coordinatorOf(agent)) });
 
   ctx.effect(() => () => {
     lastMode = mode();

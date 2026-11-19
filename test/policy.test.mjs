@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assignmentFrom, assignmentIn, toolDenial, leadToolDenial, COORDINATOR_TOOLS, ASSIGNMENT_RECORD } from '../src/policy.mjs';
+import {
+  assignmentFrom, assignmentIn, coordinatorAssignmentFrom, scopedAssignment, rolePrompt,
+  toolDenial, leadToolDenial, COORDINATOR_TOOLS, ASSIGNMENT_RECORD,
+} from '../src/policy.mjs';
 import { specialistSpawn } from '../src/spawn.mjs';
 
 const make = (dir, role = 'engineer') => ({ specialist: role, assignment: {
@@ -95,8 +98,85 @@ test('persisted assignments fail closed and ignore inherited records', () => {
     assert.equal(assignmentIn(inherited, 'child'), undefined);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+const makeGroup = () => ({
+  task_id: 'task-1', deliverable: 'Review the patch', stop_when: 'Review delivered',
+  read_paths: ['project'], write_paths: ['project/src'], max_specialists: 2,
+});
+
+test('coordinator assignments require a native card and validate Lead scope', t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'specialist-group-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const group = makeGroup();
+  const coordinator = coordinatorAssignmentFrom(group, cwd);
+  assert.equal(coordinator.version, 1);
+  assert.equal(coordinator.role, 'coordinator');
+  assert.equal(coordinator.task_id, group.task_id);
+  assert.equal(coordinator.max_specialists, 2);
+  assert.deepEqual(coordinator.read_paths, [join(coordinator.cwd, 'project')]);
+  assert.deepEqual(coordinator.write_paths, [join(coordinator.cwd, 'project', 'src')]);
+  assert.deepEqual(coordinator.commands, []);
+  for (const max_specialists of [undefined, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => coordinatorAssignmentFrom({ ...group, max_specialists }, cwd), /max_specialists/);
+  }
+  assert.throws(() => coordinatorAssignmentFrom({ ...group, task_id: ' ' }, cwd), /task_id/);
+  assert.throws(() => coordinatorAssignmentFrom({ ...group, read_paths: [] }, cwd), /read_paths/);
+  assert.throws(() => coordinatorAssignmentFrom({ ...group, write_paths: ['project-other'] }, cwd), /write_paths/);
+  assert.throws(() => coordinatorAssignmentFrom({ ...group, commands: [' '] }, cwd), /exact shell command/);
+});
+
+test('scoped leaves cannot widen matching paths or Lead-approved commands or use a native card', t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'specialist-group-scope-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const group = coordinatorAssignmentFrom({ ...makeGroup(), commands: ['npm test'] }, cwd);
+  const input = make(join(group.cwd, 'project'));
+  const leaf = assignmentFrom(input, cwd);
+  const scoped = scopedAssignment(leaf, group, 'parent');
+  assert.deepEqual(scoped, { ...leaf, coordinator_id: 'parent' });
+  assert.throws(() => scopedAssignment(leaf, group, ' '), /coordinator_id/);
+  assert.throws(() => scopedAssignment({ ...leaf, task_id: group.task_id }, group, 'parent'), /task_id/);
+  assert.throws(() => scopedAssignment({ ...leaf, read_paths: [join(group.cwd, 'project-other')] }, group, 'parent'), /read_paths/);
+  assert.throws(() => scopedAssignment({ ...leaf, write_paths: [join(group.cwd, 'project', 'docs')] }, group, 'parent'), /write_paths/);
+  assert.throws(() => assignmentFrom({ ...input, assignment: { ...input.assignment, coordinator_id: 'parent' } }, cwd), /coordinator_id/);
+
+  const verifier = make(join(group.cwd, 'project'), 'verifier');
+  verifier.assignment.allowed_tools.push('bash');
+  verifier.assignment.commands = ['npm test'];
+  assert.equal(scopedAssignment(assignmentFrom(verifier, cwd), group, 'parent').coordinator_id, 'parent');
+  verifier.assignment.commands = ['npm test '];
+  assert.throws(() => scopedAssignment(assignmentFrom(verifier, cwd), group, 'parent'), /exact commands/);
+
+  assert.match(rolePrompt(group), /Spawn only fresh leaf specialists with spawn_teammate/);
+  assert.match(rolePrompt(group), /Maximum specialists for this group: 2/);
+  assert.match(rolePrompt(scoped), /report_specialist_result to send the final result to your immediate coordinator/);
+  assert.match(rolePrompt(scoped), /Do not delegate/);
+  assert.doesNotMatch(rolePrompt(scoped), /Lead/);
+});
+
+test('replay validates durable coordinator and scoped leaf records and rejects path drift', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'specialist-group-replay-'));
+  try {
+    mkdirSync(join(dir, 'project'));
+    const group = coordinatorAssignmentFrom(makeGroup(), dir);
+    const leaf = scopedAssignment(assignmentFrom(make(join(dir, 'project')), dir), group, 'parent');
+    const replay = (memberId, assignment) => assignmentIn({ session: {
+      snapshotEvents: () => [{ type: ASSIGNMENT_RECORD, ignorable: true, data: { memberId, assignment } }],
+    } }, memberId);
+    assert.deepEqual(replay('parent', group), group);
+    assert.deepEqual(replay('leaf', leaf), leaf);
+    assert.throws(() => replay('parent', { ...group, coordinator_id: 'grandparent' }), /coordinator_id/);
+    assert.throws(() => replay('leaf', { ...leaf, coordinator_id: ' ' }), /coordinator_id/);
+    assert.throws(() => replay('leaf', { ...leaf, task_id: group.task_id }), /task_id/);
+
+    mkdirSync(join(dir, 'project', 'target'));
+    symlinkSync(join(dir, 'project', 'target'), join(dir, 'project', 'src'));
+    for (const [id, assignment] of [['parent', group], ['leaf', leaf]]) {
+      assert.throws(() => replay(id, assignment), /Persisted specialist write_paths changed/);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 const COORDINATOR_EXPECTED = [
-  'spawn_teammate', 'list_subagent_models', 'list_agents', 'send_message', 'interrupt_agent', 'wait_agent',
+  'spawn_teammate', 'spawn_specialist_coordinator', 'list_subagent_models', 'list_agents', 'send_message', 'interrupt_agent', 'wait_agent',
   'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update',
   'ask_user_question', 'todo_write', 'create_goal', 'get_goal', 'update_goal', 'exit_plan_mode',
   'compress', 'decompress', 'search_context', 'acp_status', 'acp_cache', 'skill',

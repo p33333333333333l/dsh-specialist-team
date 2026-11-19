@@ -33,34 +33,72 @@ export function canonical(path, cwd) {
 function inside(path, roots) {
   return roots.some(root => { const rel = relative(root, path); return rel === '' || (!rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && rel !== '..' && !isAbsolute(rel)); });
 }
+function pathScope(a, cwd) {
+  const paths = (value, field) => {
+    if (!Array.isArray(value) || value.some(p => typeof p !== 'string' || !p.trim())) throw new Error(`${field} must be an array of non-empty paths`);
+    return [...new Set(value.map(p => canonical(p, cwd)))];
+  };
+  const read_paths = paths(a.read_paths, 'read_paths');
+  const write_paths = paths(a.write_paths, 'write_paths');
+  if (!read_paths.length) throw new Error('read_paths must explicitly identify the allowed workspace');
+  if (write_paths.some(path => !inside(path, read_paths))) throw new Error('write_paths must be within read_paths');
+  return { read_paths, write_paths };
+}
+function exactCommands(value) {
+  const commands = value ?? [];
+  if (!Array.isArray(commands) || commands.some(c => typeof c !== 'string' || !c.trim())) throw new Error('commands must be exact shell command strings');
+  return commands;
+}
 export function assignmentFrom(args, cwd) {
   const role = args.specialist;
   if (!ROLES.includes(role)) throw new Error('Choose one of the five specialist categories before spawning.');
   const a = args.assignment;
   if (!a || typeof a !== 'object') throw new Error('A structured specialist assignment is required.');
-  const paths = (value, field) => {
-    if (!Array.isArray(value) || value.some(p => typeof p !== 'string' || !p.trim())) throw new Error(`${field} must be an array of non-empty paths`);
-    return [...new Set(value.map(p => canonical(p, cwd)))];
-  };
-  const reads = paths(a.read_paths, 'read_paths');
-  const writes = paths(a.write_paths, 'write_paths');
-  if (!reads.length) throw new Error('read_paths must explicitly identify the allowed workspace');
-  if (writes.some(path => !inside(path, reads))) throw new Error('write_paths must be within read_paths');
-  if (!['designer', 'engineer'].includes(role) && writes.length) throw new Error(`${role} cannot receive file-write paths`);
+  if (Object.hasOwn(a, 'coordinator_id')) throw new Error('coordinator_id is assigned by the specialist-team plugin.');
+  const scope = pathScope(a, cwd);
+  if (!['designer', 'engineer'].includes(role) && scope.write_paths.length) throw new Error(`${role} cannot receive file-write paths`);
   if (!Array.isArray(a.allowed_tools) || !a.allowed_tools.length || a.allowed_tools.some(t => !ROLE_TOOLS[role].includes(t))) throw new Error(`allowed_tools must be a non-empty subset of the ${role} tool policy`);
-  const commands = a.commands ?? [];
-  if (!Array.isArray(commands) || commands.some(c => typeof c !== 'string' || !c.trim())) throw new Error('commands must be exact shell command strings');
+  const commands = exactCommands(a.commands);
   if (a.allowed_tools.includes('bash') && !commands.length) throw new Error('verifier bash requires exact commands approved by Lead');
   if (role !== 'verifier' && commands.length) throw new Error('Only verifier assignments can execute checks');
   return {
     version: 1, role, cwd: canonical(cwd, cwd),
     ...(a.task_id === undefined ? {} : { task_id: nonempty(a.task_id, 'task_id') }),
     deliverable: nonempty(a.deliverable, 'deliverable'),
-    read_paths: reads, write_paths: writes,
+    ...scope,
     allowed_tools: [...new Set(a.allowed_tools)], commands,
     reviewer: nonempty(a.reviewer, 'reviewer'),
     stop_when: nonempty(a.stop_when, 'stop_when'),
   };
+}
+export function coordinatorAssignmentFrom(group, cwd) {
+  if (!group || typeof group !== 'object') throw new Error('A structured coordinator assignment is required.');
+  if (!Number.isSafeInteger(group.max_specialists) || group.max_specialists < 1) {
+    throw new Error('max_specialists must be a positive safe integer');
+  }
+  return {
+    version: 1, role: 'coordinator', cwd: canonical(cwd, cwd),
+    task_id: nonempty(group.task_id, 'task_id'),
+    deliverable: nonempty(group.deliverable, 'deliverable'),
+    stop_when: nonempty(group.stop_when, 'stop_when'),
+    ...pathScope(group, cwd), commands: exactCommands(group.commands),
+    max_specialists: group.max_specialists,
+  };
+}
+function withCoordinator(assignment, coordinatorId) {
+  if (assignment.task_id !== undefined) throw new Error('Scoped specialists cannot receive a native task_id.');
+  return { ...assignment, coordinator_id: nonempty(coordinatorId, 'coordinator_id') };
+}
+export function scopedAssignment(assignment, coordinator, coordinatorId) {
+  for (const field of ['read_paths', 'write_paths']) {
+    if (assignment[field].some(path => !inside(path, coordinator[field]))) {
+      throw new Error(`Specialist ${field} must be within the coordinator's assigned ${field}.`);
+    }
+  }
+  if (assignment.commands.some(command => !coordinator.commands.includes(command))) {
+    throw new Error('Specialist commands must match exact commands approved by Lead for this coordinator.');
+  }
+  return withCoordinator(assignment, coordinatorId);
 }
 export const ASSIGNMENT_RECORD = 'plugin:specialist-team/assignment';
 export function assignmentIn(root, memberId) {
@@ -69,7 +107,16 @@ export function assignmentIn(root, memberId) {
     if (record?.type !== ASSIGNMENT_RECORD || record.data?.memberId !== memberId) continue;
     const a = record.data.assignment;
     if (!a || a.version !== 1 || typeof a.cwd !== 'string' || !isAbsolute(a.cwd)) throw new Error('Invalid persisted specialist assignment');
-    const validated = assignmentFrom({ specialist: a.role, assignment: a }, a.cwd);
+    const { coordinator_id, ...fields } = a;
+    const hasCoordinator = Object.hasOwn(a, 'coordinator_id');
+    let validated;
+    if (a.role === 'coordinator') {
+      if (hasCoordinator) throw new Error('A coordinator cannot have a persisted coordinator_id.');
+      validated = coordinatorAssignmentFrom(a, a.cwd);
+    } else {
+      validated = assignmentFrom({ specialist: a.role, assignment: fields }, a.cwd);
+      if (hasCoordinator) validated = withCoordinator(validated, coordinator_id);
+    }
     // A changed symlink must not silently widen a saved scope during recovery.
     for (const field of ['cwd', 'read_paths', 'write_paths']) {
       if (JSON.stringify(validated[field]) !== JSON.stringify(a[field])) throw new Error(`Persisted specialist ${field} changed; Lead must review the assignment`);
@@ -99,7 +146,7 @@ export function toolDenial(assignment, exec, cwd = assignment.cwd) {
 // Strict coordinator mode: exact names only. Anything not listed, including unknown, renamed or
 // MCP tools, is denied. No prefix or wildcard grants, so new tools stay blocked until reviewed.
 export const COORDINATOR_TOOLS = Object.freeze([
-  'spawn_teammate', 'list_subagent_models', 'list_agents', 'send_message', 'interrupt_agent', 'wait_agent',
+  'spawn_teammate', 'spawn_specialist_coordinator', 'list_subagent_models', 'list_agents', 'send_message', 'interrupt_agent', 'wait_agent',
   'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update',
   'ask_user_question', 'todo_write', 'create_goal', 'get_goal', 'update_goal', 'exit_plan_mode',
   'compress', 'decompress', 'search_context', 'acp_status', 'acp_cache', 'skill',
@@ -118,6 +165,12 @@ export function leadToolDenial(exec) {
   }
 }
 export function rolePrompt(a) {
-  const handoff = a.task_id === undefined ? '' : `\nNative task: ${a.task_id}\nUse report_specialist_result for the final handoff once Lead assigns the card to you on the native board. Report the actual checks and uncovered cases. Use expected_failure only when a run reproduced the agreed failure. Keep logs and diffs out of the receipt. Lead reviews the receipt and updates the task board.`;
-  return `You are the ${a.role} specialist. Your assignment is persisted by the specialist-team plugin.\nDeliverable: ${a.deliverable}\nRead paths: ${a.read_paths.join(', ')}\nWrite paths: ${a.write_paths.join(', ') || '(none)'}\nWorking directory: ${a.cwd}\nAllowed tools: ${a.allowed_tools.join(', ')}\nExact check commands (JSON): ${JSON.stringify(a.commands)}\nCheck owner: ${a.reviewer}\nStop when: ${a.stop_when}${handoff}\nDo only this role's assigned work. Do not delegate, submit commits, push, run unassigned checks, or repair another role's findings. Report completed work, unperformed checks and blockers to Lead, then stop. Tool guards enforce only these registered tool calls; they are not an OS sandbox.`;
+  if (a.role === 'coordinator') {
+    return `You are the specialist group coordinator. Your assignment is persisted by the specialist-team plugin.\nNative group task: ${a.task_id}\nDeliverable: ${a.deliverable}\nLead-approved read paths: ${a.read_paths.join(', ')}\nLead-approved write paths: ${a.write_paths.join(', ') || '(none)'}\nWorking directory: ${a.cwd}\nLead-approved exact check commands (JSON): ${JSON.stringify(a.commands)}\nMaximum specialists for this group: ${a.max_specialists}\nStop when: ${a.stop_when}\nCheck your group card with team_task_get before dispatch. If Lead has not assigned it to you yet, end your turn so Lead's confirmation can wake you. Spawn only fresh leaf specialists with spawn_teammate. Leave implementation and checks to those specialists. Keep each assignment within the matching read and write paths and exact check commands approved by Lead. Use the group's single native card and omit task_id on specialist assignments. Receive the specialists' results, then use report_specialist_result once to send Lead a scoped group receipt after Lead assigns you the card. Summarize the deliverable, actual checks, uncovered cases and blockers. Lead reviews the receipt and updates the task board.`;
+  }
+  const scoped = a.coordinator_id !== undefined;
+  const handoff = scoped
+    ? '\nUse report_specialist_result to send the final result to your immediate coordinator. Report actual checks and uncovered cases. Use expected_failure only when a run reproduced the agreed failure. Keep logs and diffs out of the receipt.'
+    : a.task_id === undefined ? '' : `\nNative task: ${a.task_id}\nUse report_specialist_result for the final handoff once Lead assigns the card to you on the native board. Report the actual checks and uncovered cases. Use expected_failure only when a run reproduced the agreed failure. Keep logs and diffs out of the receipt. Lead reviews the receipt and updates the task board.`;
+  return `You are the ${a.role} specialist. Your assignment is persisted by the specialist-team plugin.\nDeliverable: ${a.deliverable}\nRead paths: ${a.read_paths.join(', ')}\nWrite paths: ${a.write_paths.join(', ') || '(none)'}\nWorking directory: ${a.cwd}\nAllowed tools: ${a.allowed_tools.join(', ')}\nExact check commands (JSON): ${JSON.stringify(a.commands)}\nCheck owner: ${a.reviewer}\nStop when: ${a.stop_when}${handoff}\nDo only this role's assigned work. Do not delegate, submit commits, push, run unassigned checks, or repair another role's findings. Report completed work, unperformed checks and blockers to ${scoped ? 'your immediate coordinator via report_specialist_result' : 'Lead'}, then stop. Tool guards enforce only these registered tool calls; they are not an OS sandbox.`;
 }
