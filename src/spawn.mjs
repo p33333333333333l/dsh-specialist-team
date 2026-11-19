@@ -12,6 +12,7 @@ export function specialistSpawn(base, cwd) {
       assignment: {
         type: 'object', required: true, additionalProperties: false,
         properties: {
+          task_id: { type: 'string', description: 'Optional native task ID for this deliverable. Its dependencies must be complete.' },
           deliverable: text('Concrete expected output.'),
           read_paths: paths('Allowed absolute paths or directories; no glob syntax.'),
           write_paths: paths('Allowed write paths; empty for research, architecture and verification.'),

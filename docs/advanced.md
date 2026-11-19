@@ -12,6 +12,16 @@ Use `context: fork` to share the main conversation’s history. Omit the optiona
 
 Tool and path restrictions apply to registered tool calls. They do not sandbox subprocesses. Before assigning a verifier command, check what it and any subprocesses can read, change, or access over the network.
 
+## Link an assignment to a task card
+
+After creating a native task, pass its ID as `assignment.task_id` in `spawn_teammate`. The task’s dependencies must be complete. Once the specialist starts, the main agent assigns it the task on the native board so it can send the receipt. Assignments without a task ID still work as before.
+
+A linked specialist can call `report_specialist_result` with `status`, `summary`, and, when applicable, `checks` and `limits`. The statuses `expected_failure`, `passed`, and `failed` require a verifier to list the checks it ran. Other statuses are `delivered`, `not_run`, and `blocked`. The receipt uses the task ID saved in the assignment and reaches the main agent as a native message. The main agent reviews the receipt and completes the matching task on the board.
+
+## Check dispatch limits
+
+Only the main agent can dispatch specialists. Its system prompt shows the current DSH depth cap, the total active-child cap for the root tree, and the coordinator mode. Existing work can reduce the available slots. If the active-child cap is unavailable, DSH still checks capacity when starting a teammate. For requests with nested dispatch or a concurrency target, the prompt tells the main agent to check the limits and ask for agreement before proceeding with a different arrangement.
+
 ## Edit the profile YAML
 
 Add or update `dsh-team` in the profile’s `cordis.patch.yml`. Replace the example IDs with a provider and model allowed in DSH.

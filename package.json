@@ -1,6 +1,6 @@
 {
   "name": "dsh-specialist-team",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Structured specialist assignments and role-scoped tool guards for native DSH Agent Teams",
   "type": "module",
   "main": "./src/index.mjs",
@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/cordis-plugin-loader": "1.1.0",
     "@deepseek-ai/dsh": "0.2.2-rc.4",
     "@deepseek-ai/dsh-agent": "0.2.2-rc.4",
     "@deepseek-ai/dsh-agent-loop": "0.2.2-rc.4",

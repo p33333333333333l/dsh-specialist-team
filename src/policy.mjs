@@ -54,6 +54,7 @@ export function assignmentFrom(args, cwd) {
   if (role !== 'verifier' && commands.length) throw new Error('Only verifier assignments can execute checks');
   return {
     version: 1, role, cwd: canonical(cwd, cwd),
+    ...(a.task_id === undefined ? {} : { task_id: nonempty(a.task_id, 'task_id') }),
     deliverable: nonempty(a.deliverable, 'deliverable'),
     read_paths: reads, write_paths: writes,
     allowed_tools: [...new Set(a.allowed_tools)], commands,
@@ -117,5 +118,6 @@ export function leadToolDenial(exec) {
   }
 }
 export function rolePrompt(a) {
-  return `You are the ${a.role} specialist. Your assignment is persisted by the specialist-team plugin.\nDeliverable: ${a.deliverable}\nRead paths: ${a.read_paths.join(', ')}\nWrite paths: ${a.write_paths.join(', ') || '(none)'}\nWorking directory: ${a.cwd}\nAllowed tools: ${a.allowed_tools.join(', ')}\nExact check commands (JSON): ${JSON.stringify(a.commands)}\nCheck owner: ${a.reviewer}\nStop when: ${a.stop_when}\nDo only this role's assigned work. Do not delegate, submit commits, push, run unassigned checks, or repair another role's findings. Report completed work, unperformed checks and blockers to Lead, then stop. Tool guards enforce only these registered tool calls; they are not an OS sandbox.`;
+  const handoff = a.task_id === undefined ? '' : `\nNative task: ${a.task_id}\nUse report_specialist_result for the final handoff once Lead assigns the card to you on the native board. Report the actual checks and uncovered cases. Use expected_failure only when a run reproduced the agreed failure. Keep logs and diffs out of the receipt. Lead reviews the receipt and updates the task board.`;
+  return `You are the ${a.role} specialist. Your assignment is persisted by the specialist-team plugin.\nDeliverable: ${a.deliverable}\nRead paths: ${a.read_paths.join(', ')}\nWrite paths: ${a.write_paths.join(', ') || '(none)'}\nWorking directory: ${a.cwd}\nAllowed tools: ${a.allowed_tools.join(', ')}\nExact check commands (JSON): ${JSON.stringify(a.commands)}\nCheck owner: ${a.reviewer}\nStop when: ${a.stop_when}${handoff}\nDo only this role's assigned work. Do not delegate, submit commits, push, run unassigned checks, or repair another role's findings. Report completed work, unperformed checks and blockers to Lead, then stop. Tool guards enforce only these registered tool calls; they are not an OS sandbox.`;
 }
