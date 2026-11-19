@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { Context } from '@deepseek-ai/cordis';
+import Loader from '@deepseek-ai/cordis-plugin-loader';
 import Agents from '@deepseek-ai/dsh-agent';
 import Sessions, { pluginRecordOf } from '@deepseek-ai/dsh-session';
 import Projections from '@deepseek-ai/dsh-session-projection';
@@ -56,7 +57,7 @@ function workspace(t) {
   });
   return {
     root,
-    async start(policyConfig = {}, { allowedModels, ptc = false } = {}) {
+    async start(policyConfig = {}, { allowedModels, ptc = false, subagentConfig } = {}) {
       const ctx = new Context();
       contexts.push(ctx);
       for (const plugin of [Agents, Sessions, Projections, Query, Llm, SystemPrompt, Fs, Tools]) await ctx.plugin(plugin);
@@ -65,7 +66,12 @@ function workspace(t) {
       await ctx.plugin(WorkingDirectory, { defaultDirectory: root });
       await ctx.plugin(Persistence, { root: join(root, 'sessions') });
       await ctx.plugin(AgentLoop, { agents: [] });
-      await ctx.plugin(Subagents);
+      if (subagentConfig) {
+        await ctx.plugin(Loader, { baseUrl: import.meta.url });
+        await ctx.get('loader').create({ name: '@deepseek-ai/dsh-subagent', config: subagentConfig });
+      } else {
+        await ctx.plugin(Subagents);
+      }
       await ctx.plugin(Spawn);
       await ctx.plugin(Fork);
       if (allowedModels) await ctx.plugin(ModelSettings, { enabled: true, allowedModels });
@@ -134,6 +140,35 @@ function probe(ctx, name, fields) {
   return calls;
 }
 
+test('Lead sees live dispatch limits before starting any specialist', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, lead: createLead } = await fixture.start({ coordinatorMode: 'strict' }, {
+    subagentConfig: { maxDepth: 2, maxActiveSubagents: 3 },
+  });
+  const lead = await createLead();
+  const readRouting = async () => {
+    const prompt = await ctx.systemPrompt.assemble({ agent: lead, scope: lead });
+    return prompt.contexts.find(section => section.text.includes('Specialist dispatch capability:')).text;
+  };
+  const beforeDispatch = await readRouting();
+  assert.match(beforeDispatch, /Lead only; specialist delegation depth is at most 1/);
+  assert.match(beforeDispatch, /Host depth cap: 2/);
+  assert.match(beforeDispatch, /Root tree active-child cap: 3 \(shared, not free slots\)/);
+  assert.match(beforeDispatch, /Coordinator mode: strict/);
+  assert.match(beforeDispatch, /obtain approval for an alternative before dispatching/);
+  assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
+
+  const loader = ctx.get('loader');
+  const entry = [...loader.entries()].find(row => row.options.name === '@deepseek-ai/dsh-subagent');
+  await loader.update(entry.id, { config: { maxDepth: 0, maxActiveSubagents: 5 } });
+  const updated = await readRouting();
+  assert.match(updated, /specialist delegation depth is at most 0/);
+  assert.match(updated, /Host depth cap: 0/);
+  assert.match(updated, /Root tree active-child cap: 5/);
+  await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-denied'), /exceeds maxDepth 0/);
+  assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
+});
+
 test('specialist names must match the assigned role and include a task slug', options, async t => {
   const fixture = workspace(t);
   const { ctx, lead: createLead } = await fixture.start();
@@ -191,6 +226,114 @@ test('ordinary and specialist children share native discovery, task board and co
   await call(ctx, worker, 'send_message', { agent: 'researcher-read', message: 'Native follow-up' });
   const next = await until(() => adapter.requests.find(request => request.sessionId === reader.id && requestText(request).includes('Native follow-up')), 'Reader did not continue after interrupt');
   assert.match(requestText(next), /You are the researcher specialist/);
+});
+
+test('task-linked reports hand off reproduction, repair and retest through the native team', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, adapter, lead: createLead } = await fixture.start();
+  const lead = await createLead();
+  const createTask = async (subject, blocked_by = []) => JSON.parse(await call(ctx, lead, 'team_task_create', {
+    subject, description: subject, blocked_by,
+  }));
+  const reproduction = await createTask('Reproduce the regression');
+  const repair = await createTask('Repair the regression', [reproduction.id]);
+  const retest = await createTask('Retest the regression independently', [repair.id]);
+  const readTask = async id => JSON.parse(await call(ctx, lead, 'team_task_get', { task_id: id }));
+  const readBoard = () => call(ctx, lead, 'team_task_list').then(JSON.parse);
+  const reportTool = 'report_specialist_result';
+  const delivered = { status: 'delivered', summary: 'Repaired the off-by-one error.' };
+  const expectedFailure = {
+    status: 'expected_failure', summary: 'The boundary assertion failed before the repair.',
+    checks: ['Boundary case: expected 2, got 1'], limits: 'Only the boundary case was checked.',
+  };
+  const passed = {
+    status: 'passed', summary: 'The boundary assertion passed after the repair.',
+    checks: ['Boundary case: expected 2, got 2'],
+  };
+  const linked = (task, role, slug) => {
+    const input = specialist(fixture.root, `${role}-${slug}`);
+    return { ...input, specialist: role, assignment: { ...input.assignment, task_id: task.id, deliverable: task.subject } };
+  };
+  const stages = [
+    // A caller-supplied task ID cannot redirect the receipt to the next task.
+    { task: reproduction, input: linked(reproduction, 'verifier', 'reproduce'), report: { ...expectedFailure, task_id: repair.id } },
+    { task: repair, input: linked(repair, 'engineer', 'repair'), report: delivered },
+    { task: retest, input: linked(retest, 'verifier', 'retest'), report: passed },
+  ];
+  const receipts = () => lead.session.snapshotEvents()
+    .filter(event => event.type === 'agent/inbox/spliced')
+    .flatMap(event => event.data.inserted)
+    .filter(message => message.source?.kind === 'agent-message')
+    .flatMap(message => message.content
+      .filter(block => block.type === 'text' && block.text.startsWith('Specialist result for '))
+      .map(block => ({ senderId: message.source.senderSessionId, text: block.text })));
+
+  const unlinked = specialist(fixture.root, 'researcher-unlinked');
+  await call(ctx, lead, 'spawn_teammate', unlinked);
+  await call(ctx, lead, reportTool, delivered, /unknown tool/i);
+  const unlinkedChild = await member(ctx, lead, unlinked.name);
+  await call(ctx, unlinkedChild, reportTool, delivered, /assignment does not allow/);
+
+  for (const [index, { task, input, report }] of stages.entries()) {
+    const ready = await readTask(task.id);
+    assert.equal(ready.ready, true);
+    const next = stages[index + 1];
+    if (next) {
+      assert.equal((await readTask(next.task.id)).ready, false);
+      await call(ctx, lead, 'spawn_teammate', next.input, /not ready/);
+      const descendants = await ctx.subagents.listDescendants(lead.id, signal);
+      assert.ok(descendants.every(row => row.path !== next.input.name));
+    }
+
+    await call(ctx, lead, 'spawn_teammate', input);
+    const child = await member(ctx, lead, input.name);
+    const request = await firstRequest(adapter, child.id);
+    assert.ok(requestText(request).includes(`Native task: ${task.id}`));
+    const assignment = child.session.snapshotEvents().map(pluginRecordOf)
+      .find(record => record?.type === ASSIGNMENT_RECORD && record.data.memberId === child.id);
+    assert.equal(assignment?.data.assignment.task_id, task.id);
+    const assign = async (owner, revision) => JSON.parse(await call(ctx, lead, 'team_task_update', {
+      action: 'reassign', task_id: task.id, expected_revision: revision, owner,
+    }));
+    let active = await assign(input.name, ready.revision);
+    assert.equal(active.status, 'in_progress');
+    if (index === 0) {
+      const reassigned = await assign(unlinked.name, active.revision);
+      await call(ctx, child, reportTool, report, /Lead must assign/);
+      active = await assign(input.name, reassigned.revision);
+    }
+    const beforeReport = await readBoard();
+
+    if (input.specialist === 'verifier') {
+      await call(ctx, child, reportTool, { status: report.status, summary: report.summary }, /at least one check/);
+    } else {
+      await call(ctx, child, reportTool, { ...passed, status: 'failed' }, /independent verifier/);
+    }
+    assert.equal(receipts().length, index);
+    await call(ctx, child, reportTool, report);
+    const received = receipts();
+    assert.equal(received.length, index + 1);
+    const receipt = received[index];
+    assert.equal(receipt.senderId, child.id);
+    assert.equal(receipt.text.split('\n')[0], `Specialist result for ${task.id}: ${report.status}`);
+    for (const detail of [report.summary, ...(report.checks ?? []), ...(report.limits ? [report.limits] : [])]) {
+      assert.ok(receipt.text.includes(detail));
+    }
+    assert.deepEqual(await readBoard(), beforeReport);
+
+    const completed = JSON.parse(await call(ctx, lead, 'team_task_update', {
+      action: 'complete', task_id: task.id, expected_revision: active.revision,
+    }));
+    assert.equal(completed.status, 'completed');
+    if (next) assert.equal((await readTask(next.task.id)).ready, true);
+  }
+
+  const retestId = (await member(ctx, lead, stages[2].input.name)).id;
+  await ctx.fiber.dispose();
+  const restored = await fixture.start();
+  const { agent } = await restored.ctx.agents.resume({ resumeSessionId: retestId, agentOptions: route });
+  const prompt = await restored.ctx.systemPrompt.assemble({ agent, scope: agent });
+  assert.ok(prompt.contexts.some(section => section.text.includes(`Native task: ${retest.id}`)));
 });
 
 test('fresh and fork specialists retain scope through first request and cold restore', options, async t => {

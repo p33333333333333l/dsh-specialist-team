@@ -31,6 +31,8 @@ Say what result you want and mention any files the specialist may read or edit. 
 
 A specialist starts with a fresh conversation by default. Include any findings or constraints it needs in your request.
 
+For a regression, ask the main agent to put three stages on the task board: a verifier reproduces the failure, an engineer fixes it, and a separate verifier retests it. Each specialist reports under its task ID. The next task becomes ready when the main agent reviews the result and completes the current card.
+
 ## Choose a specialist model
 
 In DSH Web, open **Plugins → Specialist Team → Specialist model settings**. Select a provider and model for the role you want to configure. Changes save automatically and apply when new specialists start. With no role preference or model specified in the request, the specialist uses the main agent’s model.

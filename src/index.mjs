@@ -18,6 +18,29 @@ export const Config = z.object({
 
 const readConfig = value => typeof value?.get === 'function' ? value.get() : value;
 const text = (description, required = false) => ({ type: 'string', description, ...(required ? { required: true } : {}) });
+const CHECK_STATUSES = ['expected_failure', 'passed', 'failed'];
+const RESULT_STATUSES = ['delivered', ...CHECK_STATUSES, 'not_run', 'blocked'];
+const REPORT_TOOL = 'report_specialist_result';
+
+function rootActiveCap(ctx) {
+  // RC4 exposes depth on SubagentRuntime and the active cap on its loader entry.
+  const loader = ctx.get('loader');
+  const entries = [...(loader?.entries() ?? [])].filter(entry =>
+    entry.options.name === '@deepseek-ai/dsh-subagent' && entry.fiber?.state === 2); // FiberState.ACTIVE
+  if (entries.length !== 1) return;
+  const capacity = readConfig(entries[0].fiber.effectiveConfig?.maxActiveSubagents);
+  if (Number.isInteger(capacity) && capacity >= 0) return capacity;
+}
+
+function requireTask(ctx, lead, taskId, reporter) {
+  const task = ctx.agentTeams.getTask(lead, taskId);
+  if (!reporter && task.ready) return;
+  const owner = reporter ?? lead;
+  if (task.status === 'in_progress' && task.ownerId === owner.id &&
+      task.blockedBy.every(id => ctx.agentTeams.getTask(lead, id).status === 'completed')) return;
+  if (reporter) throw new Error(`Lead must assign the ready native task ${taskId} to you before you can report a result.`);
+  throw new Error(`Native task ${taskId} is not ready for this specialist. Check its status, dependencies and owner.`);
+}
 
 async function selectModel(ctx, parent, args, preference, signal) {
   const provider = args.provider?.trim() ? args.provider : undefined;
@@ -86,6 +109,7 @@ export function apply(ctx, config = {}) {
         const strict = stopped ? lastMode === 'strict' && policy.teamEnabled : mode() === 'strict' && isLead(agent);
         return strict ? leadToolDenial(exec) : undefined;
       }
+      if (exec.name === REPORT_TOOL && assignment.task_id !== undefined) return;
       if (exec.name === 'send_message') {
         return exec.arguments?.agent === 'lead' ? undefined : 'Specialists report only to Lead.';
       }
@@ -129,9 +153,46 @@ export function apply(ctx, config = {}) {
       if (!agent) return '';
       const assignment = agent[agentPolicy]?.assignment;
       if (assignment) return rolePrompt(assignment);
-      return isLead(agent) ? routingPrompt(mode()) : '';
+      return isLead(agent) ? routingPrompt(mode(), ctx.subagents.resolveMaxDepth(), rootActiveCap(ctx)) : '';
     },
   });
+
+  ctx.tools.register(defineTool({
+    name: REPORT_TOOL,
+    description: 'Send a concise result for your assigned native task to Lead.',
+    parameters: {
+      status: { type: 'string', required: true, enum: RESULT_STATUSES, description: 'Outcome of the deliverable or check.' },
+      summary: text('Key finding or deliverable, including paths when useful.', true),
+      checks: { type: 'array', items: { type: 'string' }, description: 'Actual checks run and observed results. Required for expected_failure, passed and failed.' },
+      limits: text('Checks skipped, coverage limits or blockers.'),
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { messageId: text('Accepted inbox message ID.', true) } },
+      render: (_args, value) => [{ type: 'text', text: `Sent result to Lead (${value.messageId}).` }],
+    },
+    async execute({ status, summary, checks = [], limits }, exec) {
+      const specialist = exec.agent;
+      const assignment = specialist?.[agentPolicy]?.assignment;
+      if (assignment?.task_id === undefined) throw new Error('A linked native task is required.');
+      const lead = ctx.subagents.rootOf(specialist);
+      if (!isLead(lead)) throw new Error('Agent Teams must be enabled to report a task result.');
+      requireTask(ctx, lead, assignment.task_id, specialist);
+      if (!summary.trim() || checks.some(check => !check.trim())) {
+        throw new Error('Provide a non-empty summary and concrete check descriptions.');
+      }
+      if (CHECK_STATUSES.includes(status) && (assignment.role !== 'verifier' || !checks.length)) {
+        throw new Error(`${status} requires an independent verifier and at least one check.`);
+      }
+      const result = [
+        `Specialist result for ${assignment.task_id}: ${status}`,
+        summary.trim(),
+        ...checks.map(check => `Check: ${check.trim()}`),
+        ...(limits?.trim() ? [`Limits: ${limits.trim()}`] : []),
+      ].join('\n');
+      const messageId = await ctx.subagents.sendMessage(specialist, lead.id, [{ type: 'text', text: result }], { signal: exec.signal });
+      return { messageId };
+    },
+  }), { when: ({ agent }) => !stopped && agent?.[agentPolicy]?.assignment?.task_id !== undefined });
 
   ctx.tools.register(defineTool(specialistSpawn({
     name: 'spawn_teammate',
@@ -157,6 +218,8 @@ export function apply(ctx, config = {}) {
       const agentOptions = await selectModel(ctx, parent, args, readConfig(config.models)?.[args.specialist], signal);
       signal.throwIfAborted();
       if (stopped || !isLead(parent)) throw new Error('Specialist dispatch is no longer available in this session.');
+      const taskId = args.specialistAssignment.task_id;
+      if (taskId !== undefined) requireTask(ctx, parent, taskId);
       const childId = randomUUID();
       pending.set(childId, args.specialistAssignment);
       try {
