@@ -146,9 +146,9 @@ function probe(ctx, name, fields) {
   return calls;
 }
 
-test('Lead sees live dispatch limits before starting any specialist', options, async t => {
+test('full-power mode raises live dispatch limits and restores the user values', options, async t => {
   const fixture = workspace(t);
-  const { ctx, lead: createLead } = await fixture.start({ coordinatorMode: 'strict' }, {
+  const { ctx, policyFiber, lead: createLead } = await fixture.start({ coordinatorMode: 'full-power' }, {
     subagentConfig: { maxDepth: 2, maxActiveSubagents: 3 },
   });
   const lead = await createLead();
@@ -156,23 +156,45 @@ test('Lead sees live dispatch limits before starting any specialist', options, a
     const prompt = await ctx.systemPrompt.assemble({ agent: lead, scope: lead });
     return prompt.contexts.find(section => section.text.includes('Specialist dispatch capability:')).text;
   };
+  const loader = ctx.get('loader');
+  const entry = [...loader.entries()].find(row => row.options.name === '@deepseek-ai/dsh-subagent');
+  const live = () => [entry.fiber.effectiveConfig.maxDepth.get(), entry.fiber.effectiveConfig.maxActiveSubagents.get()];
+  const updateMode = mode => {
+    policyFiber.effectiveConfig.coordinatorMode[Symbol.for('cosmokit.volatile.write')](mode);
+    const emitter = Object.create(policyFiber.ctx);
+    emitter[Context.filter] = owner => owner.fiber === policyFiber;
+    policyFiber.ctx.emit(emitter, 'loader/volatile-update', [['coordinatorMode']]);
+  };
+  assert.deepEqual(live(), [3, 100]);
   const beforeDispatch = await readRouting();
+  assert.match(beforeDispatch, /Lead dispatches through group coordinators by default/);
   assert.match(beforeDispatch, /nests up to the host depth cap/);
-  assert.match(beforeDispatch, /Host depth cap: 2/);
-  assert.match(beforeDispatch, /Root tree active-child cap: 3 \(shared, not free slots\)/);
-  assert.match(beforeDispatch, /Coordinator mode: strict/);
+  assert.match(beforeDispatch, /Host depth cap: 3/);
+  assert.match(beforeDispatch, /Root tree active-child cap: 100 \(shared, not free slots\)/);
+  assert.match(beforeDispatch, /Coordinator mode: full-power/);
   assert.match(beforeDispatch, /obtain approval before switching arrangements/);
   assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
 
-  const loader = ctx.get('loader');
-  const entry = [...loader.entries()].find(row => row.options.name === '@deepseek-ai/dsh-subagent');
+  // Higher user values are kept; a lower user edit is raised again at the next sync.
+  await loader.update(entry.id, { config: { maxDepth: 5, maxActiveSubagents: 200 } });
+  assert.match(await readRouting(), /Host depth cap: 5\. Root tree active-child cap: 200 /);
   await loader.update(entry.id, { config: { maxDepth: 0, maxActiveSubagents: 5 } });
+  assert.match(await readRouting(), /Host depth cap: 3\. Root tree active-child cap: 100 /);
+
+  updateMode('off');
+  assert.deepEqual(live(), [0, 5]);
   const updated = await readRouting();
+  assert.match(updated, /Lead dispatches directly by default/);
   assert.match(updated, /unavailable with the current host limits/);
   assert.match(updated, /Host depth cap: 0/);
   assert.match(updated, /Root tree active-child cap: 5/);
   await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-denied'), /exceeds maxDepth 0/);
   assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
+
+  updateMode('full-power');
+  assert.deepEqual(live(), [3, 100]);
+  await policyFiber.dispose();
+  assert.deepEqual(live(), [0, 5]);
 });
 
 for (const maxDepth of [0, 1, 99999]) {
@@ -232,10 +254,9 @@ test('a native group task scopes nested dispatch and routes only direct workflow
   await call(ctx, lead, groupTool, input);
   const group = await member(ctx, lead, input.name);
   assert.ok(requestText(await firstRequest(adapter, group.id)).includes(`Native group task: ${task.id}`));
-  await call(ctx, group, spawnTool, leaf, /assign|own/i);
-  await call(ctx, group, reportTool, groupReport, /assign|own/i);
-  const active = await updateTask(ready, 'reassign', input.name);
+  const active = await readTask(task.id);
   assert.equal(active.owner, input.name);
+  assert.equal(active.status, 'in_progress');
   // Lead keeps its own tools while a group card is open.
   await call(ctx, lead, 'read', readInput);
 
@@ -267,8 +288,12 @@ test('a native group task scopes nested dispatch and routes only direct workflow
   await call(ctx, child, 'subagent', ordinary('grandchild'), /does not allow|unknown tool/i);
   await call(ctx, child, 'read', readInput);
   await call(ctx, child, spawnTool, { ...leaf, name: 'researcher-grandchild' }, /does not allow|unknown tool/i);
-  await call(ctx, child, 'send_message', { agent: 'lead', message: 'Bypass the coordinator' }, /coordinator|does not allow|unknown tool/i);
+  await call(ctx, child, 'send_message', { agent: 'lead', message: 'Bypass the coordinator' }, /direct parent/);
   assert.equal(reads.length, 4);
+  const board = () => call(ctx, lead, 'team_task_list').then(JSON.parse).then(value => value.tasks);
+  const childCard = (await board()).find(card => card.owner === childPath);
+  assert.equal(childCard.status, 'in_progress');
+  assert.equal(childCard.description, leaf.assignment.deliverable);
 
   const receipts = agent => agent.session.snapshotEvents()
     .filter(event => event.type === 'agent/inbox/spliced')
@@ -286,6 +311,13 @@ test('a native group task scopes nested dispatch and routes only direct workflow
   assert.ok(leadReceipts[0].text.includes(task.id));
   assert.ok(leadReceipts[0].text.includes(groupReport.summary));
   assert.deepEqual(await readTask(task.id), active);
+  assert.equal((await readTask(childCard.id)).status, 'completed');
+
+  // Questions go to the direct parent; coordinators answer only their direct members.
+  await call(ctx, child, 'send_message', { agent: input.name, message: 'Question for the coordinator' });
+  await call(ctx, group, 'send_message', { agent: childPath, message: 'Answer for the specialist' });
+  await call(ctx, group, 'send_message', { agent: 'lead', message: 'Question for Lead' });
+  await call(ctx, group, 'send_message', { agent: flat.name, message: 'Not a member' }, /direct parent and their direct members/);
 
   assert.equal((await updateTask(active, 'complete')).status, 'completed');
   await call(ctx, lead, 'read', readInput);
@@ -343,9 +375,7 @@ test('group startup recovery uses prepared links only for native catalog entries
   await call(restarted.ctx, retryLead, 'spawn_specialist_coordinator', input, /Coordinator coordinator-alpha started.*saving the native catalog failed/);
   failCatalogCheckpoint();
   const coordinatorId = await restarted.ctx.subagents.resolveName(retryLead, input.name, signal);
-  await restarted.ctx.agentTeams.updateTask(retryLead, {
-    action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: coordinatorId,
-  });
+  assert.equal(restarted.ctx.agentTeams.getTask(retryLead, task.id).ownerId, coordinatorId);
   await restarted.ctx.fiber.dispose();
 
   const recovered = await fixture.start({}, { subagentConfig });
@@ -372,9 +402,8 @@ test('two root-tree slots admit one group at a time and let both groups run a sp
   assert.deepEqual(await ctx.agentTeams.getTask(lead, second.id), second);
 
   const group = await member(ctx, lead, a.name);
-  const assigned = await ctx.agentTeams.updateTask(lead, {
-    action: 'reassign', taskId: first.id, expectedRevision: first.revision, owner: group.id,
-  });
+  const assigned = ctx.agentTeams.getTask(lead, first.id);
+  assert.equal(assigned.ownerId, group.id);
   await call(ctx, group, 'spawn_teammate', specialist(a.assignment.read_paths[0], 'researcher-first'));
   const childId = await ctx.subagents.resolveName(lead, `${a.name}/researcher-first`, signal);
   await firstRequest(adapter, childId);
@@ -395,9 +424,7 @@ test('two root-tree slots admit one group at a time and let both groups run a sp
 
   await call(ctx, lead, 'spawn_specialist_coordinator', b);
   const nextGroup = await member(ctx, lead, b.name);
-  await ctx.agentTeams.updateTask(lead, {
-    action: 'reassign', taskId: second.id, expectedRevision: second.revision, owner: nextGroup.id,
-  });
+  assert.equal(ctx.agentTeams.getTask(lead, second.id).ownerId, nextGroup.id);
   await call(ctx, nextGroup, 'spawn_teammate', specialist(b.assignment.read_paths[0], 'researcher-second'));
 });
 
@@ -413,9 +440,6 @@ test('group specialist budget survives concurrent starts and cold recovery', opt
   const groupRoot = input.assignment.read_paths[0];
   await call(ctx, lead, 'spawn_specialist_coordinator', input);
   const group = await member(ctx, lead, input.name);
-  await call(ctx, lead, 'team_task_update', {
-    action: 'reassign', task_id: task.id, expected_revision: task.revision, owner: input.name,
-  });
   const launches = await Promise.allSettled(['researcher-first', 'researcher-second'].map(name =>
     call(ctx, group, 'spawn_teammate', specialist(groupRoot, name))));
   assert.equal(launches.filter(result => result.status === 'fulfilled').length, 1);
@@ -456,7 +480,6 @@ test('nested groups follow the host depth, share one budget and report through e
   await call(ctx, lead, 'spawn_specialist_coordinator', input);
   const top = await member(ctx, lead, input.name);
   assert.match(requestText(await firstRequest(adapter, top.id)), /spawn_specialist_coordinator/);
-  await ctx.agentTeams.updateTask(lead, { action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: top.id });
 
   await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(groupRoot, task.id, 4), /costs 1 plus/);
   await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(groupRoot, 'other-task'), /parent group task_id/);
@@ -485,7 +508,7 @@ test('nested groups follow the host depth, share one budget and report through e
   ]);
 
   const leaf = await member(ctx, lead, `${input.name}/${subInput.name}/researcher-first`);
-  await call(ctx, leaf, 'send_message', { agent: 'lead', message: 'Bypass' }, /coordinator|does not allow|unknown tool/i);
+  await call(ctx, leaf, 'send_message', { agent: 'lead', message: 'Bypass' }, /direct parent/);
   await call(ctx, leaf, 'report_specialist_result', { status: 'delivered', summary: 'Leaf observations.' });
   assert.deepEqual(receiptsOf(sub).map(receipt => receipt.senderId), [leaf.id]);
   await call(ctx, sub, 'report_specialist_result', { status: 'delivered', summary: 'Subgroup observations.' });
@@ -495,6 +518,13 @@ test('nested groups follow the host depth, share one budget and report through e
   await call(ctx, top, 'report_specialist_result', { status: 'delivered', summary: 'Group observations.' });
   assert.deepEqual(receiptsOf(lead).map(receipt => receipt.senderId), [top.id]);
   assert.ok(receiptsOf(lead)[0].text.includes(task.id));
+  const cards = ctx.agentTeams.listTasks(lead);
+  const ownerOf = id => cards.find(card => card.ownerId === id);
+  assert.equal(ownerOf(top.id).id, task.id);
+  assert.equal(ownerOf(top.id).status, 'in_progress');
+  for (const id of [sub.id, leaf.id]) assert.equal(ownerOf(id).status, 'completed');
+  assert.equal(ownerOf((await member(ctx, lead, `${input.name}/${subInput.name}/researcher-second`)).id).status, 'in_progress');
+  assert.ok(cards.every(card => card.ownerId !== undefined));
 });
 
 test('a sub-coordinator budget stays reserved across cold recovery', options, async t => {
@@ -505,9 +535,8 @@ test('a sub-coordinator budget stays reserved across cold recovery', options, as
   const task = await ctx.agentTeams.createTask(lead, { subject: 'Reserved group', description: 'Keep sub-budgets after restart' });
   const input = { ...coordinator(fixture.root, task.id), assignment: { ...coordinator(fixture.root, task.id).assignment, max_specialists: 4 } };
   const groupRoot = input.assignment.read_paths[0];
-  assert.match(await call(ctx, lead, 'spawn_specialist_coordinator', input), /Reassign the group card/);
+  assert.match(await call(ctx, lead, 'spawn_specialist_coordinator', input), /owns the group card/);
   const top = await member(ctx, lead, input.name);
-  await ctx.agentTeams.updateTask(lead, { action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: top.id });
   await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(groupRoot, task.id));
 
   await ctx.fiber.dispose();
@@ -530,8 +559,7 @@ test('concurrent sub-coordinator starts in different groups keep one root-tree s
     const input = { ...coordinator(fixture.root, task.id), name, assignment: { ...coordinator(fixture.root, task.id).assignment, max_specialists: 4 } };
     await call(ctx, lead, 'spawn_specialist_coordinator', input);
     const top = await member(ctx, lead, name);
-    await ctx.agentTeams.updateTask(lead, { action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: top.id });
-    tops.push({ top, sub: subCoordinator(input.assignment.read_paths[0], task.id) });
+      tops.push({ top, sub: subCoordinator(input.assignment.read_paths[0], task.id) });
   }
   const starts = await Promise.allSettled(tops.map(({ top, sub }) => call(ctx, top, 'spawn_specialist_coordinator', sub)));
   assert.equal(starts.filter(result => result.status === 'fulfilled').length, 1);
@@ -547,7 +575,6 @@ test('a sub-coordinator start keeps one root-tree slot for specialists', options
   const groupRoot = input.assignment.read_paths[0];
   await call(ctx, lead, 'spawn_specialist_coordinator', input);
   const top = await member(ctx, lead, input.name);
-  await ctx.agentTeams.updateTask(lead, { action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: top.id });
   await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(groupRoot, task.id), /no slot for specialists/);
   await call(ctx, top, 'spawn_teammate', specialist(groupRoot, 'researcher-direct'));
 });
@@ -563,7 +590,6 @@ test('a coordinator cannot nest when the host depth leaves no room for its speci
   const prompt = requestText(await firstRequest(adapter, top.id));
   assert.match(prompt, /Spawn only fresh leaf specialists/);
   assert.doesNotMatch(prompt, /spawn_specialist_coordinator/);
-  await ctx.agentTeams.updateTask(lead, { action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: top.id });
   await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(input.assignment.read_paths[0], task.id), /unknown tool|not available|depth/i);
   assert.deepEqual((await ctx.subagents.listDescendants(lead.id, signal)).map(entry => entry.depth), [1]);
 });
@@ -615,8 +641,11 @@ test('ordinary and specialist children share native discovery, task board and co
   await call(ctx, reader, 'team_task_update', complete, /does not allow team_task_update/);
   const completed = JSON.parse(await call(ctx, worker, 'team_task_update', complete));
   assert.equal(completed.status, 'completed');
-  assert.deepEqual(JSON.parse(await call(ctx, reader, 'team_task_list')).tasks, [completed]);
-  await call(ctx, reader, 'send_message', { agent: 'ordinary', message: 'Not in scope' }, /report only to Lead/);
+  const [readerCard, ...others] = JSON.parse(await call(ctx, reader, 'team_task_list')).tasks;
+  assert.deepEqual(others, [completed]);
+  assert.equal(readerCard.owner, 'researcher-read');
+  assert.equal(readerCard.status, 'in_progress');
+  await call(ctx, reader, 'send_message', { agent: 'ordinary', message: 'Not in scope' }, /direct parent/);
   await call(ctx, reader, 'send_message', { agent: 'lead', message: 'Specialist report' });
   assert.match(requestText(await firstRequest(adapter, lead.id)), /Specialist report/);
   await firstRequest(adapter, reader.id);
@@ -671,7 +700,6 @@ test('task-linked reports hand off reproduction, repair and retest through the n
   await call(ctx, lead, 'spawn_teammate', unlinked);
   await call(ctx, lead, reportTool, delivered, /unknown tool/i);
   const unlinkedChild = await member(ctx, lead, unlinked.name);
-  await call(ctx, unlinkedChild, reportTool, delivered, /assignment does not allow/);
 
   for (const [index, { task, input, report }] of stages.entries()) {
     const ready = await readTask(task.id);
@@ -694,7 +722,8 @@ test('task-linked reports hand off reproduction, repair and retest through the n
     const assign = async (owner, revision) => JSON.parse(await call(ctx, lead, 'team_task_update', {
       action: 'reassign', task_id: task.id, expected_revision: revision, owner,
     }));
-    let active = await assign(input.name, ready.revision);
+    let active = await readTask(task.id);
+    assert.equal(active.owner, input.name);
     assert.equal(active.status, 'in_progress');
     if (index === 0) {
       const reassigned = await assign(unlinked.name, active.revision);
@@ -726,6 +755,13 @@ test('task-linked reports hand off reproduction, repair and retest through the n
     assert.equal(completed.status, 'completed');
     if (next) assert.equal((await readTask(next.task.id)).ready, true);
   }
+
+  // An unlinked specialist reports on its own plugin-created card, which then closes.
+  const unlinkedCard = (await readBoard()).tasks.find(card => card.owner === unlinked.name);
+  assert.equal(unlinkedCard.status, 'in_progress');
+  await call(ctx, unlinkedChild, reportTool, delivered);
+  assert.equal(receipts().at(-1).text.split('\n')[0], `Specialist result for ${unlinkedCard.id}: delivered`);
+  assert.equal((await readTask(unlinkedCard.id)).status, 'completed');
 
   const retestId = (await member(ctx, lead, stages[2].input.name)).id;
   await ctx.fiber.dispose();
@@ -872,15 +908,15 @@ test('assignment flush failure prevents the specialist from starting', options, 
   assert.equal(adapter.requests.some(request => request.sessionId === attempted), false);
 });
 
-test('strict mode blocks ordinary delegation and local work for the enabled root', options, async t => {
+test('full-power mode blocks ordinary delegation and local work for the enabled root', options, async t => {
   const fixture = workspace(t);
-  const { ctx, lead: createLead } = await fixture.start({ coordinatorMode: 'strict' });
+  const { ctx, lead: createLead } = await fixture.start({ coordinatorMode: 'full-power' });
   const reads = probe(ctx, 'read', ['file_path']);
   const lead = await createLead();
   const unrelated = await ctx.agentLoop.create('unrelated', route, { cwd: fixture.root });
   const file_path = join(fixture.root, 'allowed');
-  await call(ctx, lead, 'subagent', ordinary('denied'), /Strict coordinator mode/);
-  await call(ctx, lead, 'read', { file_path }, /Strict coordinator mode/);
+  await call(ctx, lead, 'subagent', ordinary('denied'), /Full-power mode/);
+  await call(ctx, lead, 'read', { file_path }, /Full-power mode/);
   await call(ctx, unrelated, 'read', { file_path });
   await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-read'));
   const child = await member(ctx, lead, 'researcher-read');
@@ -906,8 +942,8 @@ test('live coordinator changes select native execution only for the enabled team
     emitter[Context.filter] = owner => owner.fiber === policyFiber;
     policyFiber.ctx.emit(emitter, 'loader/volatile-update', [['coordinatorMode']]);
   };
-  updateMode('strict');
-  await call(ctx, lead, 'read', { file_path }, /Strict coordinator mode/);
+  updateMode('full-power');
+  await call(ctx, lead, 'read', { file_path }, /Full-power mode/);
   await call(ctx, unrelated, 'read', { file_path }, ptcOnly);
   await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-read'));
   const child = await member(ctx, lead, 'researcher-read');
@@ -920,7 +956,7 @@ test('live coordinator changes select native execution only for the enabled team
   assert.equal(reads.length, 2);
 });
 
-test('reloading the plugin restores scoped tools on the same live Agents', options, async t => {
+test('reloading the plugin restores scoped tools on the same live Agents and accepts the legacy strict value', options, async t => {
   const fixture = workspace(t);
   const { ctx, policyFiber, lead: createLead } = await fixture.start({ coordinatorMode: 'strict' });
   probe(ctx, 'read', ['file_path']);
@@ -932,14 +968,14 @@ test('reloading the plugin restores scoped tools on the same live Agents', optio
   await call(ctx, child, 'read', allowed);
   await policyFiber.dispose();
   await call(ctx, child, 'read', allowed, /policy was unloaded/);
-  await call(ctx, lead, 'read', allowed, /Strict coordinator mode/);
+  await call(ctx, lead, 'read', allowed, /Full-power mode/);
 
   const reloaded = await import('../src/index.mjs?reload');
-  await ctx.plugin(reloaded, { coordinatorMode: 'strict' });
+  await ctx.plugin(reloaded, { coordinatorMode: 'full-power' });
   assert.equal(ctx.agents.get(child.id), child);
   await call(ctx, child, 'read', allowed);
   await call(ctx, child, 'read', outside, /outside/);
-  await call(ctx, lead, 'read', allowed, /Strict coordinator mode/);
+  await call(ctx, lead, 'read', allowed, /Full-power mode/);
   await call(ctx, lead, 'spawn_teammate', specialist(fixture.root, 'researcher-read-more'));
 });
 

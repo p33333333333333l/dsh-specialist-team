@@ -16,7 +16,7 @@ export function specialistSpawn(base, cwd) {
           deliverable: text('Concrete expected output.'),
           read_paths: paths('Allowed absolute paths or directories; no glob syntax.'),
           write_paths: paths('Allowed write paths; empty for research, architecture and verification.'),
-          allowed_tools: { type: 'array', required: true, items: { type: 'string' }, description: `Choose only tools needed for this assignment. Allowed by role: ${JSON.stringify(ROLE_TOOLS)}. send_message to Lead is always available.` },
+          allowed_tools: { type: 'array', required: true, items: { type: 'string' }, description: `Choose only tools needed for this assignment. Allowed by role: ${JSON.stringify(ROLE_TOOLS)}. send_message to the direct parent and report_specialist_result are always available.` },
           commands: { type: 'array', items: { type: 'string' }, description: 'Exact shell command strings, only for verifier checks. Empty otherwise.' },
           reviewer: text('Lead or independent verifier responsible for checking this delivery.'),
           stop_when: text('Stop and report as soon as this condition holds.'),

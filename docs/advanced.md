@@ -16,15 +16,17 @@ If a specialist or coordinator has 3 tool calls denied in a row, the plugin stop
 
 ## Link an assignment to a task card
 
-After creating a native task, pass its ID as `assignment.task_id` in `spawn_teammate`. The task’s dependencies must be complete. Once the specialist starts, the main agent assigns it the task on the native board so it can send the receipt. Assignments without a task ID still work as before.
+After creating a native task, pass its ID as `assignment.task_id` in `spawn_teammate`. The task’s dependencies must be complete. Once the specialist starts, the plugin assigns it the task on the native board. For an assignment without a task ID, the plugin creates a card from the description and deliverable and assigns it to the new member, so every member has a card.
 
-A linked specialist can call `report_specialist_result` with `status`, `summary`, and, when applicable, `checks` and `limits`. The statuses `expected_failure`, `passed`, and `failed` require a verifier to list the checks it ran. Other statuses are `delivered`, `not_run`, and `blocked`. The receipt uses the task ID saved in the assignment and reaches the main agent as a native message. The main agent reviews the receipt and completes the matching task on the board.
+Every specialist can call `report_specialist_result` with `status`, `summary`, and, when applicable, `checks` and `limits`. The statuses `expected_failure`, `passed`, and `failed` require a verifier to list the checks it ran. Other statuses are `delivered`, `not_run`, and `blocked`. The receipt uses the member's card and reaches its direct parent as a native message. The plugin completes a card it created when the member reports `delivered`, `passed`, or `expected_failure`. The main agent reviews receipts for cards it created and completes them on the board.
+
+Members can message only their direct parent, and coordinators can also message their direct members. A member with a question asks its parent first; the parent answers or passes it up, and only the main agent asks the user.
 
 ## Opt into multi-level dispatch
 
-Users can request multi-level dispatch for a task. DSH must allow a subagent depth of at least 2 and at least two active slots shared across the agent tree. The number of levels follows the DSH subagent depth: with depth 2 the tree is main agent → coordinator → specialist, and each extra level lets a coordinator start a sub-coordinator. With a depth of 1, the main agent explains the limit and asks the user before switching to direct dispatch.
+Users can request multi-level dispatch for a task. In full-power mode the main agent uses it by default. DSH must allow a subagent depth of at least 2 and at least two active slots shared across the agent tree. The number of levels follows the DSH subagent depth: with depth 2 the tree is main agent → coordinator → specialist, and each extra level lets a coordinator start a sub-coordinator. With a depth of 1, the main agent explains the limit and asks the user before switching to direct dispatch.
 
-1. The **main agent** creates one native task card per group. Once dependencies are complete, it starts the coordinator using `spawn_specialist_coordinator`, assigns the card with `team_task_update`, and messages the coordinator to begin.
+1. The **main agent** creates one native task card per group. Once dependencies are complete, it starts the coordinator using `spawn_specialist_coordinator`. The plugin assigns the card to the coordinator, which starts on its own.
 2. The **coordinator** uses `spawn_teammate` to assign specialists within the approved paths and exact verifier commands. `max_specialists` caps the number of starts in the group's whole subtree over its lifetime. Specialists report to their own coordinator.
    When the depth allows, a coordinator can split off a subgroup with `spawn_specialist_coordinator`. The sub-coordinator reuses the group card, its paths and commands must stay within its parent's, and it reports to its parent coordinator. Its start costs 1 plus its own `max_specialists`, which must fit the parent's remaining budget. A coordinator whose sub-coordinator would have no depth left for specialists cannot nest.
 3. The **coordinator** sends one group report covering checks run, coverage, and blockers. The **main agent** reviews it and closes the card.
@@ -40,7 +42,7 @@ Add or update `dsh-team` in the profile’s `cordis.patch.yml`. Replace the exam
 ```yaml
 - id: dsh-team
   config:
-    coordinatorMode: 'off'  # off | strict
+    coordinatorMode: 'off'  # off | full-power (legacy strict reads as full-power)
     models:
       researcher: { provider: YOUR_PROVIDER, model: YOUR_MODEL }
 ```
@@ -49,7 +51,7 @@ Use `designer`, `researcher`, `engineer`, `architect`, or `verifier` as the role
 
 ## Restore Programmatic Tool Calling
 
-While strict mode is enabled, the main agent uses native tool calls. To restore Programmatic Tool Calling (PTC), turn strict mode off and reopen the conversation.
+While full-power mode is enabled, the main agent uses native tool calls. To restore Programmatic Tool Calling (PTC), turn full-power mode off and reopen the conversation.
 
 ## Verify the source
 

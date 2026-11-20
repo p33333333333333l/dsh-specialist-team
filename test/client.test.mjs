@@ -302,9 +302,9 @@ test('an incomplete provider keeps the live route and does not block other rows 
   assert.equal(modelsForm.calls.length, 0);
   controller.clear('researcher');
   assert.deepEqual(modelsForm.calls[0], { ops: [{ op: 'set', path: ['models'], value: { designer: saved.designer } }], revision: 7 });
-  await controller.setMode('strict');
-  assert.deepEqual(modeForm.calls[0], { ops: [{ op: 'set', path: ['coordinatorMode'], value: 'strict' }], revision: 3 });
-  assert.equal(controller.getState().mode.value, 'strict');
+  await controller.setMode('full-power');
+  assert.deepEqual(modeForm.calls[0], { ops: [{ op: 'set', path: ['coordinatorMode'], value: 'full-power' }], revision: 3 });
+  assert.equal(controller.getState().mode.value, 'full-power');
   assert.equal(row(controller, 'designer').incomplete, true);
   assert.deepEqual(plain(modelsForm.getSnapshot().value.models), { designer: saved.designer });
   controller.setModel('designer', 'b1');
@@ -334,7 +334,7 @@ test('model writes serialize and merge the next row into the latest revision; mo
   assert.equal(modelsForm.calls.length, 1);
   assert.equal(row(controller, 'designer').pending, true);
   assert.equal(row(controller, 'researcher').pending, true);
-  await controller.setMode('strict');
+  await controller.setMode('full-power');
   assert.equal(modeForm.calls.length, 1);
   pending[0].land();
   const verifier = { provider: 'alpha', model: 'm2' };
@@ -383,7 +383,7 @@ test('a refused row restores the actual route without stopping the next row or m
   const pending = deferWrites(modelsForm);
   controller.clear('designer');
   controller.clear('researcher');
-  await controller.setMode('strict');
+  await controller.setMode('full-power');
   pending[0].resolve(false);
   await flush();
   assert.equal(modeForm.calls.length, 1);
@@ -438,18 +438,18 @@ test('when the attempted value is already live, the row has no error', async () 
 });
 
 test('mode stays at its confirmed value during a write, and rejection does not stop row saves', async () => {
-  const { controller, modelsForm, modeForm } = await setup({ models: saved, coordinatorMode: 'strict' });
+  const { controller, modelsForm, modeForm } = await setup({ models: saved, coordinatorMode: 'strict' }); // legacy saved value reads as full-power
   const pending = deferWrites(modeForm);
   const attempt = controller.setMode('off');
   assert.equal(modeForm.calls.length, 1);
   assert.equal(controller.getState().mode.pending, true);
-  assert.equal(controller.getState().mode.value, 'strict');
+  assert.equal(controller.getState().mode.value, 'full-power');
   controller.clear('designer');
   assert.equal(modelsForm.calls.length, 1);
   pending[0].resolve(false);
   await attempt;
   assert.equal(controller.getState().mode.pending, false);
-  assert.equal(controller.getState().mode.value, 'strict');
+  assert.equal(controller.getState().mode.value, 'full-power');
   assert.equal(controller.getState().mode.error, 'saveFailed');
   const retry = controller.setMode('off');
   pending[1].land();
@@ -463,7 +463,7 @@ test('read-only and unavailable sections cannot be edited', async () => {
   const { controller, modelsForm, modeForm } = await setup({ models: saved });
   modeForm.set({ status: 'unavailable', value: undefined });
   assert.equal(controller.getState().mode.available, false);
-  await controller.setMode('strict');
+  await controller.setMode('full-power');
   modelsForm.set({ writable: false });
   controller.clear('designer');
   assert.equal(modeForm.calls.length, 0);
@@ -628,12 +628,12 @@ test('model and mode changes sharing dsh-team save against fresh revisions', asy
     return form.apply(ops);
   };
   controller.clear('researcher');
-  const modeChange = controller.setMode('strict');
+  const modeChange = controller.setMode('full-power');
   assert.equal(form.calls.length, 1);
   release();
   await modeChange;
   assert.deepEqual(form.calls.map(call => call.revision), [1, 2]);
-  assert.deepEqual(plain(form.getSnapshot().value), { models: {}, coordinatorMode: 'strict' });
+  assert.deepEqual(plain(form.getSnapshot().value), { models: {}, coordinatorMode: 'full-power' });
   controller.dispose();
 });
 
@@ -716,7 +716,7 @@ test('the page renders labelled controls and an autosaving switch without Save/D
   const button = (name) => findAll(tree, (node) => node.type === 'button' && node.children.includes(name))[0];
   assert.equal(button('Save'), undefined);
   assert.equal(button('Discard'), undefined);
-  await controller.setMode('strict');
+  await controller.setMode('full-power');
   tree = render('en');
   assert.equal(findAll(tree, (node) => node.props.role === 'switch')[0].props['aria-checked'], true);
   assert.equal(button('Save'), undefined);

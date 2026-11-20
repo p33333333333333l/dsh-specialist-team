@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const en = {
       settingsTitle: 'Specialist model settings',
       title: 'Specialist models',
-      summary: 'Choose a model route for each specialist role and switch strict coordinator mode.',
+      summary: 'Choose a model route for each specialist role and switch full-power mode.',
       modelsIntro: 'Without a role preference or an explicit model choice, specialists use the Lead model. Changes apply to new specialists.',
       provider: 'Provider',
       model: 'Model',
@@ -30,8 +30,8 @@ window.__ModuleLoader__.load({
       selectModel: 'Select a model',
       defaultEffort: 'No effort preference',
       clear: 'Clear',
-      coordinator: 'Strict coordinator mode',
-      coordinatorHelp: 'Off (default): the Lead can work directly and call specialists as needed. On: even reading a file requires a new specialist. Specialist calls may add to your model bill in either mode.',
+      coordinator: 'Full-power mode',
+      coordinatorHelp: 'Off (default): the Lead can work directly and call specialists as needed. On: the Lead only splits and dispatches work, group coordinators keep specialists busy, members ask their superior first, and live limits rise to depth 3 and 100 parallel subagents. On trades cost for speed.',
       saving: 'Saving…',
       conflict: 'Settings changed elsewhere. Review the current value and try again.',
       saveFailed: 'Could not save this change. The current value is shown.',
@@ -66,7 +66,7 @@ window.__ModuleLoader__.load({
     const zh = {
       settingsTitle: '专家模型设置',
       title: '专用模型',
-      summary: '选择各专家的模型和推理强度，或切换严格协调模式。',
+      summary: '选择各专家的模型和推理强度，或切换火力全开模式。',
       modelsIntro: '未设角色偏好且派工时未指定模型时，沿用主代理模型。修改仅对新启动的专家生效。',
       provider: '提供方',
       model: '模型',
@@ -75,8 +75,8 @@ window.__ModuleLoader__.load({
       selectModel: '选择模型',
       defaultEffort: '不指定推理强度',
       clear: '清除',
-      coordinator: '严格协调模式',
-      coordinatorHelp: '关闭（默认）：按需派工，主代理可以自己处理任务。开启：即使只读一个文件，也会新建专家。两种模式下，调用专家都可能增加模型费用。',
+      coordinator: '火力全开模式',
+      coordinatorHelp: '关闭（默认）：按需派工，主代理可以自己处理任务。开启：主代理只拆分和派发任务，协调者让专家并行工作，成员先向上级提问，运行时上限提高到递归深度 3、并行子代理 100。开启会用更多费用换取效率。',
       saving: '保存中…',
       conflict: '设置已在其他位置更新，请查看当前值后重试。',
       saveFailed: '无法保存此次修改，当前显示的是实际设置。',
@@ -275,7 +275,7 @@ window.__ModuleLoader__.load({
       return snapshot.status === 'ready' && isObject(snapshot.value) && isObject(snapshot.value.models) ? snapshot.value.models : {};
     }
     function currentMode(snapshot) {
-      return snapshot.status === 'ready' && isObject(snapshot.value) && snapshot.value.coordinatorMode === 'strict' ? 'strict' : 'off';
+      return snapshot.status === 'ready' && isObject(snapshot.value) && ['strict', 'full-power'].includes(snapshot.value.coordinatorMode) ? 'full-power' : 'off';
     }
 
     /** One row's view: selected values, option lists and warnings, derived from the catalog. */
@@ -550,7 +550,7 @@ window.__ModuleLoader__.load({
       }
       async function setMode(value) {
         const before = mode.getSnapshot();
-        if (disposed || modeSaving || !writable(before) || (value !== 'off' && value !== 'strict') || value === currentMode(before)) return;
+        if (disposed || modeSaving || !writable(before) || (value !== 'off' && value !== 'full-power') || value === currentMode(before)) return;
         const generation = writeGeneration;
         modeSaving = true;
         modeError = null;
@@ -746,7 +746,7 @@ window.__ModuleLoader__.load({
       if (!state.mode.available) {
         return h('section', { className: 'dst-section' }, h('p', { className: 'dst-warn', role: 'status' }, t('unavailable')));
       }
-      const on = state.mode.value === 'strict';
+      const on = state.mode.value === 'full-power';
       const locked = !state.mode.writable || state.mode.pending;
       return h('section', { className: 'dst-section' },
         h('div', { className: 'dst-switch-row' },
@@ -756,7 +756,7 @@ window.__ModuleLoader__.load({
           h('button', {
             type: 'button', className: 'dst-switch', role: 'switch', 'aria-checked': on,
             'aria-labelledby': labelId, 'aria-describedby': helpId, disabled: locked,
-            onClick: () => controller.setMode(on ? 'off' : 'strict'),
+            onClick: () => controller.setMode(on ? 'off' : 'full-power'),
           }, h('span', { className: 'dst-track', 'data-on': on, 'aria-hidden': 'true' }, h('span', { className: 'dst-thumb' })))),
         state.mode.pending && h('p', { className: 'dst-note', role: 'status' }, t('saving')),
         state.mode.error && h('p', { className: 'dst-error', role: 'alert' }, t(state.mode.error)));

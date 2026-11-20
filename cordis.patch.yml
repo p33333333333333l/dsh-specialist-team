@@ -3,6 +3,6 @@
       name: dsh-specialist-team
       # Optional settings for specialist dispatch within native Agent Teams:
       # config:
-      #   coordinatorMode: strict
+      #   coordinatorMode: full-power
       #   models:
       #     researcher: { provider: <provider>, model: <model>, reasoningEffort: high }
