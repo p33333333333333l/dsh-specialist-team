@@ -244,10 +244,10 @@ test('coordinator denies work tools, unknown names and name lookalikes', () => {
     'spawn_teammate2', 'team_task_delete', 'team_', 'mcp__', 'acp_', 'job_', 'send_message ', 'Read', 'SPAWN_TEAMMATE',
     '__proto__', 'constructor', 'toString', 'hasOwnProperty', '', 'unknown_tool',
   ];
-  for (const name of denied) assert.match(leadToolDenial({ name, arguments: {} }) ?? '', /Strict coordinator mode/, JSON.stringify(name));
-  for (const name of [undefined, null, 7, {}, ['read']]) assert.match(leadToolDenial({ name, arguments: {} }) ?? '', /Strict coordinator mode/, String(name));
-  assert.match(leadToolDenial(undefined) ?? '', /Strict coordinator mode/);
-  assert.match(leadToolDenial({}) ?? '', /Strict coordinator mode/);
+  for (const name of denied) assert.match(leadToolDenial({ name, arguments: {} }) ?? '', /Full-power mode/, JSON.stringify(name));
+  for (const name of [undefined, null, 7, {}, ['read']]) assert.match(leadToolDenial({ name, arguments: {} }) ?? '', /Full-power mode/, String(name));
+  assert.match(leadToolDenial(undefined) ?? '', /Full-power mode/);
+  assert.match(leadToolDenial({}) ?? '', /Full-power mode/);
 });
 
 test('coordinator never grants a tool through its arguments', () => {
@@ -263,11 +263,11 @@ test('coordinator never grants a tool through its arguments', () => {
 test('coordinator decompress may not write files or images', () => {
   assert.equal(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1' } }), undefined);
   assert.equal(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', full: true } }), undefined);
-  assert.match(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', toFile: '/tmp/out.txt' } }), /Strict coordinator mode/);
-  assert.match(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', imageRef: 'm00001' } }), /Strict coordinator mode/);
-  assert.match(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', imageRef: 'list' } }), /Strict coordinator mode/);
-  assert.match(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', toFile: '' } }), /Strict coordinator mode/);
-  assert.match(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', toFile: null } }), /Strict coordinator mode/);
+  assert.match(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', toFile: '/tmp/out.txt' } }), /Full-power mode/);
+  assert.match(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', imageRef: 'm00001' } }), /Full-power mode/);
+  assert.match(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', imageRef: 'list' } }), /Full-power mode/);
+  assert.match(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', toFile: '' } }), /Full-power mode/);
+  assert.match(leadToolDenial({ name: 'decompress', arguments: { blockId: 'b1', toFile: null } }), /Full-power mode/);
 });
 
 test('spawn validates before calling existing model route implementation', async () => {

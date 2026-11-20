@@ -45,9 +45,18 @@ If DSH rejects the model, check that **Subagent settings** allows model selectio
 
 ## When the main agent should only coordinate
 
-Leave **Strict coordinator mode** off for everyday work. The main agent can work directly and delegate as needed. Turn it on in **Specialist model settings** if you want even small jobs, such as reading a file, to go to a new specialist. Specialist calls may add to model costs in either mode.
+Leave **Full-power mode** off for everyday work. The main agent can work directly and delegate as needed.
 
-Turn strict mode off before asking the main agent to integrate changes, commit, or publish. Also turn it off before uninstalling the plugin.
+Turn it on in **Specialist model settings** when you want to hand over a goal and let the team run with it. In this mode:
+
+- The main agent only splits and dispatches work. Group coordinators break each group down further and keep as many specialists working in parallel as the limits allow.
+- While the mode is on, the plugin raises the live subagent limits to a recursion depth of 3 and 100 parallel subagents. Higher values you set yourself are kept. Your saved values come back when you turn the mode off or disable the plugin.
+- Members ask their direct superior first. The main agent asks you only when the goal is unclear, an irreversible or external action lacks your approval, or credentials are needed.
+- Commits and pushes go through a verifier that runs the exact git commands the main agent assigns.
+
+Full-power mode trades model cost for speed. Turn it off before uninstalling the plugin.
+
+In both modes, every member started through the plugin gets its own card on the task board, and its card is completed when it reports a successful result.
 
 ## If a specialist doesn’t start
 

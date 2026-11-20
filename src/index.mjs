@@ -8,14 +8,15 @@ import {
   ASSIGNMENT_RECORD, ROLES, assignmentIn, coordinatorAssignmentFrom, groupIdOf, leadToolDenial, rolePrompt,
   scopedAssignment, toolDenial,
 } from './policy.mjs';
-import { COORDINATOR_MODES, routingPrompt } from './prompts.mjs';
+import { COORDINATOR_MODES, FULL_POWER_LIMITS, routingPrompt } from './prompts.mjs';
 import { specialistSpawn } from './spawn.mjs';
 
 export const name = 'specialist-team';
 export const inject = ['agents', 'agentTeams', 'subagents', 'tools', 'systemPrompt', 'sessions', 'workingDirectory', 'llm'];
 const model = z.object({ provider: z.string().required(), model: z.string().required(), reasoningEffort: z.string() });
 export const Config = z.object({
-  coordinatorMode: z.union(COORDINATOR_MODES.map(mode => z.const(mode))).default('off').volatile(),
+  // `strict` is the pre-0.5 name of full-power mode; saved profiles keep loading.
+  coordinatorMode: z.union([...COORDINATOR_MODES, 'strict'].map(mode => z.const(mode))).default('off').volatile(),
   models: z.dict(model, z.union(ROLES.map(role => z.const(role)))).default({}).volatile(),
 }).default({});
 
@@ -27,19 +28,47 @@ const REPORT_TOOL = 'report_specialist_result';
 const GROUP_TOOL = 'spawn_specialist_coordinator';
 const GROUP_RECORD = 'plugin:specialist-team/group';
 const SUBGROUP_RECORD = 'plugin:specialist-team/subgroup';
-const GROUP_TOOLS = new Set(['spawn_teammate', GROUP_TOOL, REPORT_TOOL, 'team_task_get', 'wait_agent']);
+const CARD_RECORD = 'plugin:specialist-team/card';
+const GROUP_TOOLS = new Set(['spawn_teammate', GROUP_TOOL, REPORT_TOOL, 'team_task_get', 'wait_agent', 'send_message']);
+const DONE_STATUSES = new Set(['delivered', 'passed', 'expected_failure']);
+const FULL_POWER = 'full-power';
+const VOLATILE_WRITE = Symbol.for('cosmokit.volatile.write');
 const COORDINATOR_NAME = /^coordinator-[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const DENIAL_LIMIT = 3;
 const pathList = { type: 'array', required: true, items: { type: 'string' } };
 
-function rootActiveCap(ctx) {
+function subagentEntry(ctx) {
   // RC4 exposes depth on SubagentRuntime and the active cap on its loader entry.
   const loader = ctx.get('loader');
   const entries = [...(loader?.entries() ?? [])].filter(entry =>
     entry.options.name === '@deepseek-ai/dsh-subagent' && entry.fiber?.state === 2); // FiberState.ACTIVE
-  if (entries.length !== 1) return;
-  const capacity = readConfig(entries[0].fiber.effectiveConfig?.maxActiveSubagents);
+  return entries.length === 1 ? entries[0] : undefined;
+}
+
+function rootActiveCap(ctx) {
+  const capacity = readConfig(subagentEntry(ctx)?.fiber.effectiveConfig?.maxActiveSubagents);
   if (Number.isInteger(capacity) && capacity >= 0) return capacity;
+}
+
+// Raise the live subagent limits while full-power mode is on; otherwise put back the user's values.
+// Only the running references change, never the profile. A later user edit resets them until the next sync.
+function syncSubagentLimits(ctx, raise) {
+  const entry = subagentEntry(ctx);
+  const live = entry?.fiber.effectiveConfig;
+  if (!live) return;
+  let saved;
+  try {
+    saved = entry.fiber.resolveConfig(entry.fiber.rawConfig);
+  } catch {
+    return;
+  }
+  for (const [key, floor] of Object.entries(FULL_POWER_LIMITS)) {
+    const ref = live[key];
+    const own = readConfig(saved?.[key]);
+    if (typeof ref?.[VOLATILE_WRITE] !== 'function' || !Number.isInteger(own)) continue;
+    const value = raise ? Math.max(own, floor) : own;
+    if (ref.get() !== value) ref[VOLATILE_WRITE](value);
+  }
 }
 
 function requireTask(ctx, lead, taskId, reporter) {
@@ -171,7 +200,11 @@ export function apply(ctx, config = {}) {
     agent.ctx.tools.setExecutor(new NativeToolExecutor(agent.ctx));
     policy.nativeExecutor = true;
   };
-  const mode = () => readConfig(config.coordinatorMode) ?? 'off';
+  const mode = () => {
+    const value = readConfig(config.coordinatorMode) ?? 'off';
+    return value === 'strict' ? FULL_POWER : value;
+  };
+  const syncLimits = () => syncSubagentLimits(ctx, !stopped && mode() === FULL_POWER);
   // The member's current sandbox mode, or undefined when this composition has no sandbox policy.
   const sandboxModeOf = agent => {
     try {
@@ -182,6 +215,15 @@ export function apply(ctx, config = {}) {
   };
   let stopped = false;
   let lastMode;
+  // A restored member whose root is not live has no resolvable names.
+  const namesOf = agent => {
+    try {
+      return ctx.subagents.namesOf(agent);
+    } catch (error) {
+      if (error.code !== 'UNAUTHORIZED') throw error;
+      return {};
+    }
+  };
   const isLead = agent => {
     if (!agent) return false;
     try {
@@ -195,16 +237,44 @@ export function apply(ctx, config = {}) {
   const start = async (parent, args, assignment, signal, agentOptions, childId = randomUUID()) => {
     pending.set(childId, assignment);
     try {
-      return await ctx.subagents.startActivation({
+      const started = await ctx.subagents.startActivation({
         childId, parent, name: args.name, label: args.description,
         provider: args.context === 'fork' ? 'fork' : 'spawn', cwd: assignment.cwd,
         prompt: [{ type: 'text', text: args.prompt }],
         maxDepth: ctx.subagents.resolveMaxDepth(), signal, delivery: 'parent',
         ...agentOptions === undefined ? {} : { agentOptions },
       });
+      return { name: started.name, id: childId };
     } finally {
       pending.delete(childId);
     }
+  };
+
+  // Every started member owns a card: the Lead-provided one, or one the plugin creates for it.
+  // Cards are created only after a successful start so a failed start leaves no unowned card.
+  const assignCard = async (lead, memberId, taskId, subject, description) => {
+    let card;
+    try {
+      card = taskId === undefined
+        ? await ctx.agentTeams.createTask(lead, { subject, description })
+        : ctx.agentTeams.getTask(lead, taskId);
+      await ctx.agentTeams.updateTask(lead, { taskId: card.id, expectedRevision: card.revision, action: 'reassign', owner: memberId });
+    } catch (error) {
+      ctx.logger?.warn?.(`specialist-team: could not assign a card to member ${memberId}: ${error?.message ?? error}`);
+      if (taskId === undefined && card) {
+        await ctx.agentTeams.updateTask(lead, { taskId: card.id, expectedRevision: card.revision, action: 'delete' }).catch(() => {});
+      }
+      return false;
+    }
+    if (taskId !== undefined) return true;
+    lead[agentPolicy]?.cards?.set(memberId, card.id);
+    appendPluginRecord(lead.session, CARD_RECORD, { leadId: lead.id, memberId, taskId: card.id });
+    try {
+      await ctx.sessions.flush(lead.session);
+    } catch (error) {
+      ctx.logger?.warn?.(`specialist-team: could not save the card of member ${memberId}: ${error?.message ?? error}`);
+    }
+    return true;
   };
 
   // Coordinator starts anywhere in one root tree share a lock so each slot check sees the previous start.
@@ -232,6 +302,7 @@ export function apply(ctx, config = {}) {
         await ctx.sessions.flush(parent.session);
         const started = await start(parent, args, assignment, signal, undefined, childId);
         parent[agentPolicy].subgroups.set(childId, assignment.max_specialists);
+        await assignCard(lead, childId, undefined, args.description, assignment.deliverable);
         return { name: started.name, next: 'It shares your group card and starts on its own; wait for its subgroup receipt.' };
       });
     });
@@ -268,20 +339,27 @@ export function apply(ctx, config = {}) {
     };
     const check = exec => {
       if (!assignment) {
-        const strict = stopped ? lastMode === 'strict' && policy.teamEnabled : mode() === 'strict' && isLead(agent);
-        return strict ? leadToolDenial(exec) : undefined;
+        const full = stopped ? lastMode === FULL_POWER && policy.teamEnabled : mode() === FULL_POWER && isLead(agent);
+        return full ? leadToolDenial(exec) : undefined;
       }
       if (assignment.role === 'coordinator') {
         if (!GROUP_TOOLS.has(exec.name)) return 'Group coordinators can only dispatch specialists or sub-coordinators, check their group card, and report.';
         if (exec.name === 'team_task_get' && exec.arguments?.task_id !== assignment.task_id) return 'Only your group task card is available.';
+        if (exec.name === 'send_message') return messageDenial(exec, true);
         return;
       }
-      if (exec.name === REPORT_TOOL && (assignment.task_id !== undefined || assignment.coordinator_id !== undefined)) return;
-      if (assignment.coordinator_id && exec.name === 'send_message') return 'Use report_specialist_result to report to your coordinator.';
-      if (exec.name === 'send_message') {
-        return exec.arguments?.agent === 'lead' ? undefined : 'Specialists report only to Lead.';
-      }
+      if (exec.name === REPORT_TOOL) return;
+      if (exec.name === 'send_message') return messageDenial(exec, false);
       return toolDenial(assignment, exec, ctx.workingDirectory.get(agent.session), sandboxModeOf(agent));
+    };
+    // Members may ask their direct parent; coordinators may also answer their direct members.
+    const messageDenial = (exec, coordinator) => {
+      const target = exec.arguments?.agent;
+      const { self, parent } = namesOf(agent);
+      if (parent !== undefined && target === parent) return;
+      const child = self !== undefined && typeof target === 'string' && target.startsWith(`${self}/`) ? target.slice(self.length + 1) : '';
+      if (coordinator && child && !child.includes('/')) return;
+      return coordinator ? 'Coordinators message only their direct parent and their direct members.' : 'Specialists message only their direct parent.';
     };
     const own = assignmentIn(agent, agent.id);
     assignment = own ?? initial;
@@ -306,6 +384,7 @@ export function apply(ctx, config = {}) {
     } else {
       policy.teamEnabled = isLead(agent);
       policy.groups = new Map();
+      policy.cards = new Map();
       const cataloged = new Set();
       for (const event of agent.session.snapshotEvents(agent.session.inheritedEventCount ?? 0)) {
         if (event.type === 'subagent/catalog') cataloged.add(event.data.childId);
@@ -313,10 +392,13 @@ export function apply(ctx, config = {}) {
         if (record?.type === GROUP_RECORD && record.data?.leadId === agent.id) {
           policy.groups.set(record.data.coordinatorId, record.data.taskId);
         }
+        if (record?.type === CARD_RECORD && record.data?.leadId === agent.id) {
+          policy.cards.set(record.data.memberId, record.data.taskId);
+        }
       }
       // A prepared group is usable only after DSH commits the native child.
       for (const id of policy.groups.keys()) if (!cataloged.has(id)) policy.groups.delete(id);
-      if (policy.teamEnabled && mode() === 'strict') useNativeExecutor(agent);
+      if (policy.teamEnabled && mode() === FULL_POWER) useNativeExecutor(agent);
     }
     policy.assignment = assignment;
     loading = false;
@@ -325,7 +407,8 @@ export function apply(ctx, config = {}) {
   ctx.on('agent/created', ({ agent }) => install(agent));
   ctx.on('agent/disposed', ({ agent }) => installed.delete(agent));
   ctx.on('loader/volatile-update', () => {
-    if (mode() === 'strict') for (const agent of installed) if (isLead(agent)) useNativeExecutor(agent);
+    syncLimits();
+    if (mode() === FULL_POWER) for (const agent of installed) if (isLead(agent)) useNativeExecutor(agent);
   });
   ctx.on('session/event', (session, event) => {
     if (event.type !== 'team/mode') return;
@@ -334,7 +417,7 @@ export function apply(ctx, config = {}) {
     const policy = agent[agentPolicy];
     // Keep the last Team mode for the guard that outlives this plugin context.
     policy.teamEnabled = event.data.enabled;
-    if (policy.teamEnabled && mode() === 'strict') useNativeExecutor(agent);
+    if (policy.teamEnabled && mode() === FULL_POWER) useNativeExecutor(agent);
   });
   ctx.systemPrompt.context({
     name: 'specialist-team:routing',
@@ -344,14 +427,16 @@ export function apply(ctx, config = {}) {
     text: ({ agent }) => {
       if (!agent) return '';
       const assignment = agent[agentPolicy]?.assignment;
-      if (assignment) return rolePrompt(assignment, canNest(agent));
-      return isLead(agent) ? routingPrompt(mode(), ctx.subagents.resolveMaxDepth(), rootActiveCap(ctx)) : '';
+      if (assignment) return rolePrompt(assignment, canNest(agent), namesOf(agent).parent);
+      if (!isLead(agent)) return '';
+      syncLimits();
+      return routingPrompt(mode(), ctx.subagents.resolveMaxDepth(), rootActiveCap(ctx));
     },
   });
 
   ctx.tools.register(defineTool({
     name: REPORT_TOOL,
-    description: 'Send a concise result to your immediate coordinator, or to Lead for a native task.',
+    description: 'Send a concise final result to your immediate coordinator, or to Lead for your task card.',
     parameters: {
       status: { type: 'string', required: true, enum: RESULT_STATUSES, description: 'Outcome of the deliverable or check.' },
       summary: text('Key finding or deliverable, including paths when useful.', true),
@@ -365,17 +450,19 @@ export function apply(ctx, config = {}) {
     async execute({ status, summary, checks = [], limits }, exec) {
       const specialist = exec.agent;
       const assignment = specialist?.[agentPolicy]?.assignment;
-      if (assignment?.task_id === undefined && assignment?.coordinator_id === undefined) throw new Error('A linked native task or coordinator is required.');
       const lead = ctx.subagents.rootOf(specialist);
       if (!isLead(lead)) throw new Error('Agent Teams must be enabled to report a task result.');
-      const coordinatorId = assignment.coordinator_id;
+      const cardId = lead[agentPolicy]?.cards?.get(specialist.id);
+      const coordinatorId = assignment?.coordinator_id;
+      const taskId = assignment?.task_id ?? cardId;
+      if (!assignment || (taskId === undefined && coordinatorId === undefined)) throw new Error('A linked native task or coordinator is required.');
       if (coordinatorId) {
         const groupId = groupIdOf(assignment, specialist.id);
         const taskId = groupFor(lead, groupId);
         if (!taskId) throw new Error('The specialist group is unavailable.');
         requireTask(ctx, lead, taskId, { id: groupId });
       } else {
-        requireTask(ctx, lead, assignment.task_id, specialist);
+        requireTask(ctx, lead, taskId, specialist);
       }
       if (!summary.trim() || checks.some(check => !check.trim())) {
         throw new Error('Provide a non-empty summary and concrete check descriptions.');
@@ -384,7 +471,7 @@ export function apply(ctx, config = {}) {
         throw new Error(`${status} requires an independent verifier and at least one check.`);
       }
       const targetId = coordinatorId ?? lead.id;
-      const subject = coordinatorId ? ctx.subagents.namesOf(specialist).self : assignment.task_id;
+      const subject = coordinatorId ? ctx.subagents.namesOf(specialist).self : taskId;
       const result = [
         `Specialist result for ${subject}: ${status}`,
         summary.trim(),
@@ -392,12 +479,20 @@ export function apply(ctx, config = {}) {
         ...(limits?.trim() ? [`Limits: ${limits.trim()}`] : []),
       ].join('\n');
       const messageId = await ctx.subagents.sendMessage(specialist, targetId, [{ type: 'text', text: result }], { signal: exec.signal });
+      // A plugin-created card closes with its owner's successful result; Lead-provided cards stay for Lead review.
+      if (cardId !== undefined && DONE_STATUSES.has(status)) {
+        try {
+          const card = ctx.agentTeams.getTask(lead, cardId);
+          if (card.status === 'in_progress' && card.ownerId === specialist.id) {
+            await ctx.agentTeams.updateTask(lead, { taskId: cardId, expectedRevision: card.revision, action: 'complete' });
+          }
+        } catch (error) {
+          ctx.logger?.warn?.(`specialist-team: could not complete card ${cardId}: ${error?.message ?? error}`);
+        }
+      }
       return { messageId };
     },
-  }), { when: ({ agent }) => {
-    const assignment = agent?.[agentPolicy]?.assignment;
-    return !stopped && (assignment?.task_id !== undefined || assignment?.coordinator_id !== undefined);
-  } });
+  }), { when: ({ agent }) => !stopped && agent?.[agentPolicy]?.assignment !== undefined });
 
   const startGroup = async (lead, args, assignment, signal) => {
     const taskId = assignment.task_id;
@@ -411,17 +506,21 @@ export function apply(ctx, config = {}) {
     requireTask(ctx, lead, taskId);
     const started = await start(lead, args, assignment, signal, undefined, childId);
     groups.set(childId, taskId);
+    const owned = await assignCard(lead, childId, taskId);
     try {
       await ctx.sessions.flush(lead.session);
     } catch (error) {
       throw new Error(`Coordinator ${started.name} started for ${taskId}, but saving the native catalog failed. Check the team before retrying.`, { cause: error });
     }
-    return { name: started.name, next: 'Reassign the group card, then message the coordinator to begin.' };
+    return {
+      name: started.name,
+      next: owned ? 'It owns the group card and starts on its own; wait for its group receipt.' : 'Assigning the group card failed: reassign it with team_task_update, then message the coordinator to begin.',
+    };
   };
 
   ctx.tools.register(defineTool({
     name: GROUP_TOOL,
-    description: 'Start a fresh coordinator for one native group task, or a sub-coordinator inside your group. Use only when the user opts into multi-level dispatch.',
+    description: 'Start a fresh coordinator for one native group task, or a sub-coordinator inside your group. In off mode, use only when the user opts into multi-level dispatch.',
     parameters: {
       name: text('Unique coordinator-<group> name, up to 32 characters.', true),
       description: text('Short label for the native agent tree.', true),
@@ -444,6 +543,7 @@ export function apply(ctx, config = {}) {
       render: (_args, value) => [{ type: 'text', text: `Started ${value.name}. ${value.next}` }],
     },
     async execute(args, exec) {
+      syncLimits();
       const lead = exec.agent;
       if (args.name.length > 32 || !COORDINATOR_NAME.test(args.name)) {
         throw new Error('Use coordinator-<group> with lowercase letters, digits, and single hyphens, up to 32 characters.');
@@ -483,6 +583,7 @@ export function apply(ctx, config = {}) {
     },
     isConcurrencySafe: () => true,
     async execute(args, exec) {
+      syncLimits();
       const parent = exec.agent;
       const coordinator = coordinatorOf(parent);
       const signal = AbortSignal.any([exec.signal, lifetime.signal]);
@@ -501,6 +602,7 @@ export function apply(ctx, config = {}) {
           signal.throwIfAborted();
           requireGroup(parent, coordinator);
           const started = await start(parent, args, assignment, signal, agentOptions);
+          await assignCard(ctx.subagents.rootOf(parent), started.id, undefined, args.description, assignment.deliverable);
           return { name: started.name };
         });
       }
@@ -511,6 +613,7 @@ export function apply(ctx, config = {}) {
       const assignment = args.specialistAssignment;
       if (assignment.task_id !== undefined) requireTask(ctx, parent, assignment.task_id);
       const started = await start(parent, args, assignment, signal, agentOptions);
+      await assignCard(parent, started.id, assignment.task_id, args.description, assignment.deliverable);
       return { name: started.name };
     },
   }, agent => ctx.workingDirectory.get(agent.session))), { when: ({ agent }) => !stopped && (isLead(agent) || !!coordinatorOf(agent)) });
@@ -518,8 +621,10 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => () => {
     lastMode = mode();
     stopped = true;
+    syncLimits();
     lifetime.abort();
     installed.clear();
   });
+  syncLimits();
   return Promise.all(ctx.agents.list().map(install));
 }
