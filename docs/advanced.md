@@ -36,7 +36,7 @@ A specialist can message only its direct parent. A coordinator can also message 
 Conditions for multi-level dispatch:
 
 - **Depth.** DSH’s default subagent depth (`maxDepth`) is 1, which allows direct children only. The chain main agent → coordinator → specialist needs `maxDepth` of 2 or more on the Subagent plugin (`@deepseek-ai/dsh-subagent`).
-- **Slots.** The shared active slots (`maxActiveSubagents`, default 8) must number at least 2. The plugin keeps one slot free for specialists.
+- **Slots.** The active slots shared by the whole agent tree (`maxActiveSubagents`, default 8) must number at least 2. The plugin keeps one slot free for specialists.
 - **Your request.** Outside full-power mode, ask for multi-level dispatch for that task. In full-power mode the main agent uses it by default and raises both limits itself, to depth 3 and 100 subagents, so you need not set them.
 
 Set the depth in the Subagent plugin settings, or in the profile’s `cordis.patch.yml` (see [Edit the profile YAML](#edit-the-profile-yaml)). A patch replaces the row’s whole `config`, and unlisted keys keep their defaults:
@@ -74,7 +74,7 @@ Use `designer`, `researcher`, `engineer`, `architect`, or `verifier` as the role
 
 ## Restore Programmatic Tool Calling
 
-While full-power mode is on, the main agent uses native tool calls. To restore Programmatic Tool Calling (PTC), turn full-power mode off and reopen the conversation.
+While full-power mode is on, the main agent uses native tool calls. This plugin switches to native tool calls only while the mode is on and does not restore Programmatic Tool Calling (PTC) when you turn the mode off.
 
 ## Verify the source
 

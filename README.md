@@ -10,7 +10,7 @@ Ask DSH to delegate part of a task to a specialist. For example, have an enginee
 
 - **Versions.** DSH `0.2.2-rc.4` and Node.js `>=22`.
 - **DSH plugins.** DSH’s Subagent plugin (`@deepseek-ai/dsh-subagent`) and Agent Teams plugin (`@deepseek-ai/dsh-agent-team`) come with DSH and are enabled by default. You do not install them, but keep both enabled: this plugin stays inactive without them.
-- **Agent Teams on.** Agent Teams is off by default in each conversation. In the main (top-level) conversation, select **Use Agent Teams** in the model and reasoning menu before you ask for a specialist. Otherwise the specialist tools are not offered, and the main agent works itself or starts an ordinary teammate.
+- **Agent Teams on.** Agent Teams is off by default for each new main (top-level) conversation, and its setting covers that conversation’s whole agent tree. In the main conversation, select **Enable agent teamwork** in the model and reasoning menu before you ask for a specialist. Otherwise the specialist tools are not offered, and the main agent works itself or starts an ordinary teammate.
 - **DSH Web.** The plugin’s settings page is part of the DSH Web interface, and the install command below uses the `web` profile.
 
 ### Steps
@@ -48,7 +48,7 @@ For work that splits into independent groups, ask the main agent to “use multi
 
 ## Choose a specialist model
 
-In DSH Web, open **Plugins → Specialist Team → Specialist model settings**. Select a provider and model for the role you want to configure. Changes save automatically and apply when new specialists start. With no role preference or model specified in the request, the specialist uses the main agent’s model.
+In DSH Web, open **Plugins → dsh-specialist-team → Specialist model settings**. Select a provider and model for the role you want to configure. Changes save automatically and apply when new specialists start. With no role preference or model specified in the request, the specialist uses the main agent’s model.
 
 ![Specialist model settings entry on the plugin page](docs/specialist-settings.jpg)
 
@@ -61,7 +61,7 @@ To give the team a goal and get on with other work, turn on **Full-power mode** 
 Before you turn it on:
 
 - Agent Teams must be on in the main conversation, because the mode only takes effect there. DSH’s Subagent plugin must be active, or the limits below are not raised.
-- The main agent keeps only dispatch and coordination tools and uses native tool calls instead of Programmatic Tool Calling (PTC). To get PTC back, turn the mode off and reopen the conversation ([details](docs/advanced.md#restore-programmatic-tool-calling)).
+- The main agent keeps only dispatch and coordination tools and uses native tool calls instead of Programmatic Tool Calling (PTC). This plugin does not restore PTC when you turn the mode off ([details](docs/advanced.md#restore-programmatic-tool-calling)).
 
 While it is on:
 
