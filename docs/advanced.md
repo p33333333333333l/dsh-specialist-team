@@ -4,7 +4,7 @@
 
 ## Call the assignment tool directly
 
-Use `spawn_teammate` in the main conversation with Agent Teams enabled. Select the specialist role and specify the deliverable, allowed read and write paths, allowed tools, reviewer, and stop condition. For a verifier, include the exact commands it may run. The main agent integrates changes after review.
+Use `spawn_teammate` in the main conversation with Agent Teams enabled. Select the specialist role and specify the deliverable, allowed read and write paths, allowed tools, reviewer, and stop condition. For a verifier, include the exact commands it may run. The main agent integrates changes after review. In full-power mode, it assigns the commit and push commands to a verifier instead.
 
 Choose a unique name that starts with the selected role, such as `researcher-read-docs`. Use lowercase ASCII letters and digits, with a single hyphen between segments. The name can be up to 32 characters long. If creation fails because of the name, check the role prefix, format, and whether the team already uses that name.
 
@@ -14,17 +14,26 @@ Tool and path restrictions apply to registered tool calls. They do not sandbox s
 
 If a specialist or coordinator has 3 tool calls denied in a row, the plugin stops its run and messages its direct parent with the last denied tool and reason. Any allowed call resets the count. Remove the blocker or adjust the assignment before you message it to continue.
 
-## Link an assignment to a task card
+## Task cards and receipts
 
-After creating a native task, pass its ID as `assignment.task_id` in `spawn_teammate`. The task’s dependencies must be complete. Once the specialist starts, the plugin assigns it the task on the native board. For an assignment without a task ID, the plugin creates a card from the description and deliverable and assigns it to the new member, so every member has a card.
+Every specialist and coordinator started through the plugin owns a card on the native board:
 
-Every specialist can call `report_specialist_result` with `status`, `summary`, and, when applicable, `checks` and `limits`. The statuses `expected_failure`, `passed`, and `failed` require a verifier to list the checks it ran. Other statuses are `delivered`, `not_run`, and `blocked`. The receipt uses the member's card and reaches its direct parent as a native message. The plugin completes a card it created when the member reports `delivered`, `passed`, or `expected_failure`. The main agent reviews receipts for cards it created and completes them on the board.
+- **With a task ID.** Create a native task, then pass its ID as `assignment.task_id` in `spawn_teammate`. The task’s dependencies must be complete. The plugin assigns the card to the specialist once it starts.
+- **Without a task ID.** The plugin creates a card from the assignment’s description and deliverable and assigns it to the new member.
 
-Members can message only their direct parent, and coordinators can also message their direct members. A member with a question asks its parent first; the parent answers or passes it up, and only the main agent asks the user.
+When done, the specialist calls `report_specialist_result` with `status`, `summary`, and, when applicable, `checks` and `limits`. The statuses `expected_failure`, `passed`, and `failed` require a verifier to list the checks it ran. Other statuses are `delivered`, `not_run`, and `blocked`. The receipt names the member’s card and reaches its direct parent as a native message.
 
-## Opt into multi-level dispatch
+Who completes the card depends on who created it. The plugin completes its own cards when the member reports `delivered`, `passed`, or `expected_failure`; after `failed`, `not_run`, or `blocked` the card stays in progress. A card the main agent created stays open until the main agent reviews the receipt and completes it.
 
-Users can request multi-level dispatch for a task. In full-power mode the main agent uses it by default. DSH must allow a subagent depth of at least 2 and at least two active slots shared across the agent tree. The number of levels follows the DSH subagent depth: with depth 2 the tree is main agent → coordinator → specialist, and each extra level lets a coordinator start a sub-coordinator. With a depth of 1, the main agent explains the limit and asks the user before switching to direct dispatch.
+Ordinary teammates started with `subagent` do not go through the plugin, so they get no automatic card. The main agent creates and assigns cards for them.
+
+## Questions and messages
+
+A specialist can message only its direct parent. A coordinator can also message its own direct members. Members take questions to their parent first; the parent answers or passes the question up, and only the main agent asks the user.
+
+## Multi-level dispatch
+
+Users can request multi-level dispatch for a task. In full-power mode the main agent uses it by default, and the raised limits (depth 3, 100 subagents) meet the requirements below. DSH must allow a subagent depth of at least 2 and at least two active slots shared across the agent tree. The number of levels follows the DSH subagent depth: with depth 2 the tree is main agent → coordinator → specialist, and each extra level lets a coordinator start a sub-coordinator. With a depth of 1, the main agent explains the limit and asks the user before switching to direct dispatch.
 
 1. The **main agent** creates one native task card per group. Once dependencies are complete, it starts the coordinator using `spawn_specialist_coordinator`. The plugin assigns the card to the coordinator, which starts on its own.
 2. The **coordinator** uses `spawn_teammate` to assign specialists within the approved paths and exact verifier commands. `max_specialists` caps the number of starts in the group's whole subtree over its lifetime. Specialists report to their own coordinator.
@@ -51,7 +60,7 @@ Use `designer`, `researcher`, `engineer`, `architect`, or `verifier` as the role
 
 ## Restore Programmatic Tool Calling
 
-While full-power mode is enabled, the main agent uses native tool calls. To restore Programmatic Tool Calling (PTC), turn full-power mode off and reopen the conversation.
+While full-power mode is on, the main agent uses native tool calls. To restore Programmatic Tool Calling (PTC), turn full-power mode off and reopen the conversation.
 
 ## Verify the source
 

@@ -31,9 +31,11 @@ Say what result you want and mention any files the specialist may read or edit. 
 
 A specialist starts with a fresh conversation by default. Include any findings or constraints it needs in your request.
 
+Every specialist and coordinator started through the plugin gets a card on the task board, assigned to it, so no task is left without an owner. The plugin completes the card when the member reports a delivery or a passing check.
+
 For a regression, ask the main agent to put three stages on the task board: a verifier reproduces the failure, an engineer fixes it, and a separate verifier retests it. Each specialist reports under its task ID. The next task becomes ready when the main agent reviews the result and completes the current card.
 
-For work that splits into independent groups, ask the main agent to “use multi-level dispatch for this task and have each group coordinator assign specialists and summarize their results.” DSH needs a subagent depth of at least 2 and at least two shared active slots; a deeper subagent depth allows sub-coordinators. [Multi-level dispatch and recovery](docs/advanced.md#opt-into-multi-level-dispatch)
+For work that splits into independent groups, ask the main agent to “use multi-level dispatch for this task and have each group coordinator assign specialists and summarize their results.” DSH needs a subagent depth of at least 2 and at least two shared active slots; a deeper subagent depth allows sub-coordinators. With full-power mode on (below), the main agent dispatches this way by default. [Multi-level dispatch and recovery](docs/advanced.md#multi-level-dispatch)
 
 ## Choose a specialist model
 
@@ -43,20 +45,18 @@ In DSH Web, open **Plugins → Specialist Team → Specialist model settings**. 
 
 If DSH rejects the model, check that **Subagent settings** allows model selection and that the exact provider and model are on the allowed list. After changing the list, try in a new main conversation. To clear a saved reasoning effort while keeping the model, select **No effort preference**.
 
-## When the main agent should only coordinate
+## Hand over a goal: full-power mode
 
-Leave **Full-power mode** off for everyday work. The main agent can work directly and delegate as needed.
+To give the team a goal and get on with other work, turn on **Full-power mode** in **Specialist model settings**. For everyday work, leave it off; the main agent can then work directly and delegate as needed.
 
-Turn it on in **Specialist model settings** when you want to hand over a goal and let the team run with it. In this mode:
+While it is on:
 
-- The main agent only splits and dispatches work. Group coordinators break each group down further and keep as many specialists working in parallel as the limits allow.
-- While the mode is on, the plugin raises the live subagent limits to a recursion depth of 3 and 100 parallel subagents. Higher values you set yourself are kept. Your saved values come back when you turn the mode off or disable the plugin.
-- Members ask their direct superior first. The main agent asks you only when the goal is unclear, an irreversible or external action lacks your approval, or credentials are needed.
-- Commits and pushes go through a verifier that runs the exact git commands the main agent assigns.
+- The main agent only splits and dispatches work and does not read or write files itself. Group coordinators split their groups further and keep as many specialists working at once as they can.
+- The plugin raises the live subagent depth to 3 and the number of subagents running at once to 100. Higher values you set are kept. Your own values come back when you turn the mode off or disable the plugin.
+- Specialists and coordinators take questions to their direct superior first, and questions move up level by level. The main agent asks you only when the goal is unclear, an irreversible or external action lacks your approval, or credentials are needed.
+- A verifier runs the exact git commands the main agent assigns for commits and pushes.
 
-Full-power mode trades model cost for speed. Turn it off before uninstalling the plugin.
-
-In both modes, every member started through the plugin gets its own card on the task board, and its card is completed when it reports a successful result.
+More specialists run at once, so model costs rise. Turn the mode off before uninstalling the plugin; otherwise the main agent in already open conversations stays limited to dispatching.
 
 ## If a specialist doesn’t start
 
