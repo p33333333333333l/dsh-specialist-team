@@ -236,9 +236,8 @@ test('a native group task scopes nested dispatch and routes only direct workflow
   await call(ctx, group, reportTool, groupReport, /assign|own/i);
   const active = await updateTask(ready, 'reassign', input.name);
   assert.equal(active.owner, input.name);
-  await call(ctx, lead, 'read', readInput, /group|coordinator/i);
-  await call(ctx, lead, spawnTool, flat, /group|coordinator/i);
-  await call(ctx, lead, 'subagent', ordinary('ordinary-denied'), /group|coordinator/i);
+  // Lead keeps its own tools while a group card is open.
+  await call(ctx, lead, 'read', readInput);
 
   await call(ctx, group, spawnTool, { ...leaf, context: 'fork' }, /fresh|fork/i);
   await call(ctx, group, spawnTool, { ...leaf, model: route.model, provider: route.provider }, /override|model/i);
@@ -269,7 +268,7 @@ test('a native group task scopes nested dispatch and routes only direct workflow
   await call(ctx, child, 'read', readInput);
   await call(ctx, child, spawnTool, { ...leaf, name: 'researcher-grandchild' }, /does not allow|unknown tool/i);
   await call(ctx, child, 'send_message', { agent: 'lead', message: 'Bypass the coordinator' }, /coordinator|does not allow|unknown tool/i);
-  assert.equal(reads.length, 3);
+  assert.equal(reads.length, 4);
 
   const receipts = agent => agent.session.snapshotEvents()
     .filter(event => event.type === 'agent/inbox/spliced')
@@ -287,7 +286,6 @@ test('a native group task scopes nested dispatch and routes only direct workflow
   assert.ok(leadReceipts[0].text.includes(task.id));
   assert.ok(leadReceipts[0].text.includes(groupReport.summary));
   assert.deepEqual(await readTask(task.id), active);
-  await call(ctx, lead, spawnTool, flat, /group|coordinator/i);
 
   assert.equal((await updateTask(active, 'complete')).status, 'completed');
   await call(ctx, lead, 'read', readInput);
@@ -297,7 +295,7 @@ test('a native group task scopes nested dispatch and routes only direct workflow
   assert.ok(await member(ctx, lead, 'ordinary-restored'));
 });
 
-test('a group start blocks parallel ordinary delegation', options, async t => {
+test('a group start does not block parallel ordinary delegation', options, async t => {
   const fixture = workspace(t);
   const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig: { maxDepth: 2 } });
   const lead = await createLead();
@@ -311,23 +309,11 @@ test('a group start blocks parallel ordinary delegation', options, async t => {
       ].map(([name, args]) => ({ type: 'tool-call', id: randomUUID(), name, arguments: JSON.stringify(args) })),
     });
     assert.equal(results[0].result.isError, false);
-    assert.equal(results[1].result.isError, true);
-    assert.match(results[1].result.content[0].text, /Strict coordinator mode/);
-    assert.deepEqual((await ctx.subagents.listDescendants(lead.id, signal)).map(entry => entry.path), [group.name]);
+    assert.equal(results[1].result.isError, false);
+    assert.deepEqual((await ctx.subagents.listDescendants(lead.id, signal)).map(entry => entry.path).sort(), [group.name, 'ordinary-parallel'].sort());
   } finally {
     toolSet.dispose();
   }
-});
-
-test('a conflicting Lead executor rejects the group before native startup', options, async t => {
-  const fixture = workspace(t);
-  const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig: { maxDepth: 2 } });
-  const lead = await createLead();
-  lead.ctx.tools.setExecutor(new Native.NativeToolExecutor(lead.ctx));
-  const task = await ctx.agentTeams.createTask(lead, { subject: 'Group', description: 'Coordinate work' });
-  await call(ctx, lead, 'spawn_specialist_coordinator', coordinator(fixture.root, task.id), /Only one tool executor/);
-  assert.deepEqual(await ctx.subagents.listDescendants(lead.id, signal), []);
-  assert.equal(ctx.agentTeams.getTask(lead, task.id).ready, true);
 });
 
 test('group startup recovery uses prepared links only for native catalog entries', options, async t => {
@@ -445,7 +431,6 @@ test('group specialist budget survives concurrent starts and cold recovery', opt
   const { agent: restoredLead } = await revived.ctx.agents.resume({ resumeSessionId: lead.id, agentOptions: route });
   await call(revived.ctx, restoredLead, 'send_message', { agent: input.name, message: 'Recover the group.' });
   const restoredGroup = await member(revived.ctx, restoredLead, input.name);
-  await call(revived.ctx, restoredLead, 'spawn_teammate', specialist(groupRoot, 'researcher-flat'), /group coordination/i);
   await call(revived.ctx, restoredGroup, 'spawn_teammate', specialist(groupRoot, 'researcher-third'), /specialist start limit/);
 });
 
@@ -848,6 +833,28 @@ test('consecutive guard denials stop the specialist and tell its parent', option
   assert.equal(reads.length, 1);
 });
 
+test('a specialist may repeat its current sandbox mode but not widen it', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, lead: createLead } = await fixture.start();
+  let mode = 'danger-full-access';
+  ctx.provide('sandboxPolicy');
+  ctx.set('sandboxPolicy', { resolve: () => ({ mode }), overrideOf: () => undefined });
+  const bash = probe(ctx, 'bash', ['command', 'workdir', 'sandbox_permissions']);
+  const lead = await createLead();
+  const input = specialist(fixture.root, 'verifier-mode');
+  input.specialist = 'verifier';
+  input.assignment.allowed_tools.push('bash');
+  input.assignment.commands = ['npm test'];
+  await call(ctx, lead, 'spawn_teammate', input);
+  const child = await member(ctx, lead, 'verifier-mode');
+  const run = sandbox_permissions => ({ workdir: fixture.root, command: 'npm test', sandbox_permissions });
+  await call(ctx, child, 'bash', run('danger-full-access'));
+  await call(ctx, child, 'bash', run('workspace-write'));
+  mode = 'workspace-write';
+  await call(ctx, child, 'bash', run('danger-full-access'), /cannot widen the sandbox beyond workspace-write/);
+  assert.equal(bash.length, 2);
+});
+
 test('assignment flush failure prevents the specialist from starting', options, async t => {
   const fixture = workspace(t);
   const { ctx, adapter, lead: createLead } = await fixture.start();
@@ -911,41 +918,6 @@ test('live coordinator changes select native execution only for the enabled team
   await call(ctx, lead, 'read', { file_path });
   await call(ctx, unrelated, 'read', { file_path }, ptcOnly);
   assert.equal(reads.length, 2);
-});
-
-test('reopening a restored group or enabling its team makes Lead coordination callable in PTC', options, async t => {
-  const fixture = workspace(t);
-  const subagentConfig = { maxDepth: 2 };
-  const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig });
-  const lead = await createLead();
-  const task = await ctx.agentTeams.createTask(lead, { subject: 'Restored group', description: 'Keep coordination callable' });
-  const group = coordinator(fixture.root, task.id);
-  await call(ctx, lead, 'spawn_specialist_coordinator', group);
-  const assigned = await ctx.agentTeams.updateTask(lead, {
-    action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: (await member(ctx, lead, group.name)).id,
-  });
-  const completed = await ctx.agentTeams.updateTask(lead, {
-    action: 'complete', taskId: task.id, expectedRevision: assigned.revision,
-  });
-  await ctx.fiber.dispose();
-
-  const revived = await fixture.start({}, { ptc: true, subagentConfig });
-  const { agent: restoredLead } = await revived.ctx.agents.resume({ resumeSessionId: lead.id, agentOptions: route });
-  await call(revived.ctx, restoredLead, 'team_task_get', { task_id: task.id }, /only `run_code` is callable directly/);
-  await revived.ctx.agentTeams.updateTask(restoredLead, {
-    action: 'reopen', taskId: task.id, expectedRevision: completed.revision,
-  });
-  await call(revived.ctx, restoredLead, 'team_task_get', { task_id: task.id });
-  await revived.ctx.agentTeams.setEnabled(restoredLead, false);
-  await revived.ctx.fiber.dispose();
-
-  const disabled = await fixture.start({}, { ptc: true, subagentConfig });
-  const { agent: disabledLead } = await disabled.ctx.agents.resume({ resumeSessionId: lead.id, agentOptions: route });
-  probe(disabled.ctx, 'read', ['file_path']);
-  await call(disabled.ctx, disabledLead, 'read', { file_path: fixture.root }, /only `run_code` is callable directly/);
-  await disabled.ctx.agentTeams.setEnabled(disabledLead, true);
-  await call(disabled.ctx, disabledLead, 'team_task_get', { task_id: task.id });
-  await call(disabled.ctx, disabledLead, 'read', { file_path: fixture.root }, /Strict coordinator mode/);
 });
 
 test('reloading the plugin restores scoped tools on the same live Agents', options, async t => {

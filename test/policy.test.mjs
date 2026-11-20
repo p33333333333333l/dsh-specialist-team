@@ -49,7 +49,13 @@ test('verifier can execute only exact assigned commands without escalation', () 
   assert.equal(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test' } }), undefined);
   assert.ok(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test; echo nope' } }));
   assert.ok(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', run_in_background: true } }));
-  assert.match(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', sandbox_permissions: 'danger-full-access' } }), /Retry the same call once without sandbox_permissions/);
+  const run = (sandbox_permissions, mode) => toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', sandbox_permissions } }, undefined, mode);
+  assert.match(run('danger-full-access'), /cannot widen the sandbox\. Retry without sandbox_permissions/);
+  assert.match(run('danger-full-access', 'workspace-write'), /cannot widen the sandbox beyond workspace-write/);
+  assert.match(run('workspace-write', 'read-only'), /beyond read-only/);
+  // The current or a narrower mode is not an escalation; DSH runs or rejects it.
+  assert.equal(run('danger-full-access', 'danger-full-access'), undefined);
+  assert.equal(run('workspace-write', 'danger-full-access'), undefined);
   for (const sandbox_permissions of ['', null]) {
     assert.equal(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', sandbox_permissions } }), undefined);
   }

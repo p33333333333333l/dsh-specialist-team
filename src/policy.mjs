@@ -142,14 +142,19 @@ export function assignmentIn(root, memberId) {
     return validated;
   }
 }
-export function toolDenial(assignment, exec, cwd = assignment.cwd) {
+// Modes each sandbox mode may widen to, mirroring DSH's sandbox escalation table.
+const WIDER_MODES = { 'read-only': ['workspace-write', 'danger-full-access'], 'workspace-write': ['danger-full-access'] };
+export function toolDenial(assignment, exec, cwd = assignment.cwd, sandboxMode) {
   if (!assignment.allowed_tools.includes(exec.name)) return `${assignment.role} assignment does not allow ${exec.name}; report the need to Lead.`;
   const args = exec.arguments ?? {};
   if (exec.name === 'glob' && (typeof args.pattern !== 'string' || isAbsolute(args.pattern) || args.pattern.includes('..'))) return 'Glob patterns must stay relative to the assigned search path.';
   if (exec.name === 'mcp__huashu-chrome__screenshot' && (args.savePath || args.focus)) return 'Specialist screenshots may not write files or take browser focus.';
-  // Models often send an empty placeholder; only a real mode request is an escalation.
-  if (args.sandbox_permissions != null && args.sandbox_permissions !== '' && ['edit', 'write', 'bash'].includes(exec.name)) {
-    return 'Specialist tools cannot request a different sandbox mode. Retry the same call once without sandbox_permissions and justification; if it fails again, report the blocker instead of retrying.';
+  // Some models fill sandbox_permissions on every call, often with the current mode, which DSH runs as-is.
+  // Deny only a request wider than the current mode; DSH judges every other value.
+  const requested = args.sandbox_permissions;
+  if (requested != null && requested !== '' && ['edit', 'write', 'bash'].includes(exec.name)
+      && (sandboxMode === undefined || (WIDER_MODES[sandboxMode] ?? []).includes(requested))) {
+    return `Specialist tools cannot widen the sandbox${sandboxMode ? ` beyond ${sandboxMode}` : ''}. Retry without sandbox_permissions and justification; if the sandbox blocks the command, report the blocker instead of retrying.`;
   }
   if (exec.name === 'bash') {
     if (!assignment.commands.includes(args.command)) return 'Only exact check commands assigned by Lead may run.';
@@ -204,5 +209,5 @@ export function rolePrompt(a, canNest = false) {
   const handoff = scoped
     ? '\nUse report_specialist_result to send the final result to your immediate coordinator. Report actual checks and uncovered cases. Use expected_failure only when a run reproduced the agreed failure. Keep logs and diffs out of the receipt.'
     : a.task_id === undefined ? '' : `\nNative task: ${a.task_id}\nUse report_specialist_result for the final handoff once Lead assigns the card to you on the native board. Report the actual checks and uncovered cases. Use expected_failure only when a run reproduced the agreed failure. Keep logs and diffs out of the receipt. Lead reviews the receipt and updates the task board.`;
-  return `You are the ${a.role} specialist. Your assignment is persisted by the specialist-team plugin.\nDeliverable: ${a.deliverable}\nRead paths: ${a.read_paths.join(', ')}\nWrite paths: ${a.write_paths.join(', ') || '(none)'}\nWorking directory: ${a.cwd}\nAllowed tools: ${a.allowed_tools.join(', ')}\nExact check commands (JSON): ${JSON.stringify(a.commands)}\nCheck owner: ${a.reviewer}\nStop when: ${a.stop_when}${handoff}\nDo only this role's assigned work. Never pass sandbox_permissions. Do not delegate, submit commits, push, run unassigned checks, or repair another role's findings. Report completed work, unperformed checks and blockers to ${scoped ? 'your immediate coordinator via report_specialist_result' : 'Lead'}, then stop. Tool guards enforce only these registered tool calls; they are not an OS sandbox.`;
+  return `You are the ${a.role} specialist. Your assignment is persisted by the specialist-team plugin.\nDeliverable: ${a.deliverable}\nRead paths: ${a.read_paths.join(', ')}\nWrite paths: ${a.write_paths.join(', ') || '(none)'}\nWorking directory: ${a.cwd}\nAllowed tools: ${a.allowed_tools.join(', ')}\nExact check commands (JSON): ${JSON.stringify(a.commands)}\nCheck owner: ${a.reviewer}\nStop when: ${a.stop_when}${handoff}\nDo only this role's assigned work. Never request a wider sandbox. Do not delegate, submit commits, push, run unassigned checks, or repair another role's findings. Report completed work, unperformed checks and blockers to ${scoped ? 'your immediate coordinator via report_specialist_result' : 'Lead'}, then stop. Tool guards enforce only these registered tool calls; they are not an OS sandbox.`;
 }
