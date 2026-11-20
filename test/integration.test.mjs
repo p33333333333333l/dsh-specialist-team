@@ -262,12 +262,14 @@ test('a native group task scopes nested dispatch and routes only direct workflow
     { path: input.name, id: group.id, parentId: lead.id, depth: 1 },
     { path: childPath, id: child.id, parentId: group.id, depth: 2 },
   ]);
+  // Allowed reads keep these denials below the consecutive-denial stop.
   await call(ctx, child, 'read', readInput);
   await call(ctx, child, 'read', { file_path: join(groupRoot, 'other-input') }, /outside/i);
   await call(ctx, child, 'subagent', ordinary('grandchild'), /does not allow|unknown tool/i);
+  await call(ctx, child, 'read', readInput);
   await call(ctx, child, spawnTool, { ...leaf, name: 'researcher-grandchild' }, /does not allow|unknown tool/i);
   await call(ctx, child, 'send_message', { agent: 'lead', message: 'Bypass the coordinator' }, /coordinator|does not allow|unknown tool/i);
-  assert.equal(reads.length, 2);
+  assert.equal(reads.length, 3);
 
   const receipts = agent => agent.session.snapshotEvents()
     .filter(event => event.type === 'agent/inbox/spliced')
@@ -813,6 +815,37 @@ test('specialist scope checks the actual search path and exact verifier command'
   assert.equal(glob.length, 1);
   assert.equal(grep.length, 1);
   assert.equal(bash.length, 1);
+});
+
+test('consecutive guard denials stop the specialist and tell its parent', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, adapter, lead: createLead } = await fixture.start();
+  const reads = probe(ctx, 'read', ['file_path']);
+  const bash = probe(ctx, 'bash', ['command', 'workdir']);
+  const lead = await createLead();
+  const input = specialist(fixture.root, 'verifier-loop');
+  input.specialist = 'verifier';
+  input.assignment.allowed_tools.push('bash');
+  input.assignment.commands = ['npm test'];
+  await call(ctx, lead, 'spawn_teammate', input);
+  const child = await member(ctx, lead, 'verifier-loop');
+  const request = await firstRequest(adapter, child.id);
+  const escalate = { workdir: fixture.root, command: 'npm test', sandbox_permissions: 'workspace-write', justification: 'Need write' };
+  await call(ctx, child, 'bash', escalate, /Denial 1 of 3/);
+  await call(ctx, child, 'read', { file_path: join(fixture.root, 'input') });
+  await call(ctx, child, 'bash', escalate, /Denial 1 of 3/);
+  await call(ctx, child, 'bash', { ...escalate, command: 'pnpm install' }, /Denial 2 of 3/);
+  assert.equal(request.signal.aborted, false);
+  await call(ctx, child, 'bash', escalate, /stopped this run/);
+  await until(() => request.signal.aborted, 'Looping specialist was not interrupted');
+  const notice = await until(() => lead.session.snapshotEvents()
+    .filter(event => event.type === 'agent/inbox/spliced')
+    .flatMap(event => event.data.inserted)
+    .find(message => message.source?.senderSessionId === child.id), 'Lead was not told about the stop');
+  assert.match(notice.content.map(block => block.text).join('\n'), /verifier-loop was stopped after 3 tool denials in a row\. Last denied bash/);
+  await call(ctx, child, 'bash', escalate, /Denial 1 of 3/);
+  assert.equal(bash.length, 0);
+  assert.equal(reads.length, 1);
 });
 
 test('assignment flush failure prevents the specialist from starting', options, async t => {

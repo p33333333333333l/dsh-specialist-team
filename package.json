@@ -1,6 +1,6 @@
 {
   "name": "dsh-specialist-team",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Structured specialist assignments and role-scoped tool guards for native DSH Agent Teams",
   "type": "module",
   "main": "./src/index.mjs",
