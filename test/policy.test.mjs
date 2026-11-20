@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  assignmentFrom, assignmentIn, coordinatorAssignmentFrom, groupIdOf, scopedAssignment, rolePrompt,
+  assignmentFrom, assignmentIn, assignmentPrompt, coordinatorAssignmentFrom, groupIdOf, scopedAssignment, rolePrompt,
   toolDenial, leadToolDenial, COORDINATOR_TOOLS, ASSIGNMENT_RECORD,
 } from '../src/policy.mjs';
 import { specialistSpawn } from '../src/spawn.mjs';
@@ -156,10 +156,19 @@ test('scoped leaves cannot widen matching paths or Lead-approved commands or use
   assert.throws(() => scopedAssignment(assignmentFrom(verifier, cwd), group, 'parent'), /exact commands/);
 
   assert.match(rolePrompt(group), /Spawn only fresh leaf specialists with spawn_teammate/);
-  assert.match(rolePrompt(group), /Maximum specialists for this group: 2/);
+  assert.match(assignmentPrompt(group, 'lead'), /Maximum specialists for this group: 2/);
+  assert.match(assignmentPrompt(group, 'lead'), /Direct parent: lead/);
+  assert.doesNotMatch(rolePrompt(group), /Maximum specialists for this group|Native group task|Lead-approved read paths/);
   assert.match(rolePrompt(scoped), /report_specialist_result to send the final result to your immediate coordinator/);
   assert.match(rolePrompt(scoped), /Do not delegate/);
   assert.doesNotMatch(rolePrompt(scoped), /Lead/);
+  const block = assignmentPrompt(scoped, 'parent');
+  for (const field of [`Deliverable: ${scoped.deliverable}`, `Read paths: ${scoped.read_paths.join(', ')}`, `Check owner: ${scoped.reviewer}`, `Stop when: ${scoped.stop_when}`, 'Direct parent: parent']) {
+    assert.ok(block.includes(field), field);
+  }
+  assert.doesNotMatch(rolePrompt(scoped), /Deliverable|Read paths|Check owner|Stop when|Direct parent/);
+  assert.doesNotMatch(assignmentPrompt(scoped), /Direct parent/);
+  assert.deepEqual(rolePrompt(scoped), rolePrompt({ ...scoped, deliverable: 'Another deliverable', stop_when: 'Elsewhere', task_id: undefined }));
 });
 
 test('sub-coordinators share the parent card, narrow its scope and carry the budget chain', t => {

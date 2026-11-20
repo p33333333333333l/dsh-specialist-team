@@ -5,7 +5,7 @@ import { NativeToolExecutor } from '@deepseek-ai/dsh-tool-executor-native';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import z from '@deepseek-ai/schemastery';
 import {
-  ASSIGNMENT_RECORD, ROLES, assignmentIn, coordinatorAssignmentFrom, groupIdOf, leadToolDenial, rolePrompt,
+  ASSIGNMENT_RECORD, ROLES, assignmentIn, assignmentPrompt, coordinatorAssignmentFrom, groupIdOf, leadToolDenial, rolePrompt,
   scopedAssignment, toolDenial,
 } from './policy.mjs';
 import { COORDINATOR_MODES, FULL_POWER_LIMITS, routingPrompt } from './prompts.mjs';
@@ -237,10 +237,12 @@ export function apply(ctx, config = {}) {
   const start = async (parent, args, assignment, signal, agentOptions, childId = randomUUID()) => {
     pending.set(childId, assignment);
     try {
+      // The assignment goes into the first user message so the role system prompt stays identical across children.
+      const firstMessage = `${assignmentPrompt(assignment, namesOf(parent).self)}\n\n${args.prompt}`;
       const started = await ctx.subagents.startActivation({
         childId, parent, name: args.name, label: args.description,
         provider: args.context === 'fork' ? 'fork' : 'spawn', cwd: assignment.cwd,
-        prompt: [{ type: 'text', text: args.prompt }],
+        prompt: [{ type: 'text', text: firstMessage }],
         maxDepth: ctx.subagents.resolveMaxDepth(), signal, delivery: 'parent',
         ...agentOptions === undefined ? {} : { agentOptions },
       });
@@ -427,7 +429,7 @@ export function apply(ctx, config = {}) {
     text: ({ agent }) => {
       if (!agent) return '';
       const assignment = agent[agentPolicy]?.assignment;
-      if (assignment) return rolePrompt(assignment, canNest(agent), namesOf(agent).parent);
+      if (assignment) return rolePrompt(assignment, canNest(agent));
       if (!isLead(agent)) return '';
       syncLimits();
       return routingPrompt(mode(), ctx.subagents.resolveMaxDepth(), rootActiveCap(ctx));

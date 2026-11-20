@@ -190,26 +190,44 @@ export function leadToolDenial(exec) {
     return 'Full-power mode: Lead may not write decompressed content or images to files; delegate file work to a specialist.';
   }
 }
-export function rolePrompt(a, canNest = false, parent) {
-  const ask = `When you lack a decision, ask your direct parent${parent ? ` (${parent})` : ''} with send_message and end your turn; its answer starts your next turn. Do not ask the user.`;
+// Assignment-specific facts live in the child's first user message (assignmentPrompt), never in the system
+// prompt, so children of the same role share one system-prompt prefix. toolDenial and the scope checks stay the enforcement.
+export function assignmentPrompt(a, parent) {
+  const parentLine = parent ? [`Direct parent: ${parent}`] : [];
+  const lines = a.role === 'coordinator'
+    ? [
+      `Native group task: ${a.task_id}`, `Deliverable: ${a.deliverable}`,
+      `Lead-approved read paths: ${a.read_paths.join(', ')}`, `Lead-approved write paths: ${a.write_paths.join(', ') || '(none)'}`,
+      `Working directory: ${a.cwd}`, `Lead-approved exact check commands (JSON): ${JSON.stringify(a.commands)}`,
+      `Maximum specialists for this group: ${a.max_specialists}`, `Stop when: ${a.stop_when}`,
+    ]
+    : [
+      `Deliverable: ${a.deliverable}`, `Read paths: ${a.read_paths.join(', ')}`, `Write paths: ${a.write_paths.join(', ') || '(none)'}`,
+      `Working directory: ${a.cwd}`, `Allowed tools: ${a.allowed_tools.join(', ')}`,
+      `Exact check commands (JSON): ${JSON.stringify(a.commands)}`, `Check owner: ${a.reviewer}`, `Stop when: ${a.stop_when}`,
+      ...a.coordinator_id === undefined && a.task_id !== undefined ? [`Native task: ${a.task_id}`] : [],
+    ];
+  return `Assignment (persisted by the specialist-team plugin; it governs your work):\n${[...lines, ...parentLine].join('\n')}`;
+}
+export function rolePrompt(a, canNest = false) {
+  const ask = 'When you lack a decision, ask your direct parent (named in your Assignment) with send_message and end your turn; its answer starts your next turn. Do not ask the user.';
   if (a.role === 'coordinator') {
     const nested = a.coordinator_id !== undefined;
     const card = nested
       ? 'Your parent group card is assigned to the top group coordinator; check it with team_task_get, then dispatch without waiting for an assignment to you.'
       : 'The plugin assigns your group card to you when you start. Check it with team_task_get before dispatch.';
     const dispatch = canNest
-      ? 'Spawn fresh specialists with spawn_teammate. When part of the group splits into an independent subgroup, you may start a sub-coordinator with spawn_specialist_coordinator: reuse your group task_id, keep its paths and commands within yours, and give it a max_specialists budget that fits your remaining budget. A sub-coordinator start costs 1 plus its budget.'
+      ? 'Spawn fresh specialists with spawn_teammate. When part of the group splits into an independent subgroup, you may start a sub-coordinator with spawn_specialist_coordinator: reuse your group task_id, keep its paths and commands within yours, and give it a max_specialists budget that fits your remaining budget. A sub-coordinator start costs 1 plus its budget. Every start in this group subtree counts toward the maximum specialists in your Assignment, including sub-coordinators.'
       : 'Spawn only fresh leaf specialists with spawn_teammate.';
-    const budget = canNest ? ' (every start in this group subtree counts, including sub-coordinators)' : '';
     const report = nested
       ? 'Receive the results, then use report_specialist_result once to send your immediate coordinator a scoped subgroup receipt. Summarize the deliverable, actual checks, uncovered cases and blockers.'
       : 'Receive the results, then use report_specialist_result once to send Lead a scoped group receipt. Summarize the deliverable, actual checks, uncovered cases and blockers. Lead reviews the receipt and updates the task board.';
-    return `You are the specialist group coordinator. Your assignment is persisted by the specialist-team plugin.\nNative group task: ${a.task_id}\nDeliverable: ${a.deliverable}\nLead-approved read paths: ${a.read_paths.join(', ')}\nLead-approved write paths: ${a.write_paths.join(', ') || '(none)'}\nWorking directory: ${a.cwd}\nLead-approved exact check commands (JSON): ${JSON.stringify(a.commands)}\nMaximum specialists for this group: ${a.max_specialists}${budget}\nStop when: ${a.stop_when}\n${card} ${dispatch} Leave implementation and checks to those specialists. Keep each assignment within the matching read and write paths and exact check commands approved by Lead. Omit task_id on specialist and sub-coordinator assignments; the plugin creates and assigns a card for each of them. Answer your direct members' questions with send_message; pass up only what you cannot decide. ${ask} ${report}`;
+    return `You are the specialist group coordinator. Your assignment is persisted by the specialist-team plugin and listed in the Assignment block of your first message.\n${card} ${dispatch} Leave implementation and checks to those specialists. Keep each assignment within the matching read and write paths and exact check commands approved by Lead. Omit task_id on specialist and sub-coordinator assignments; the plugin creates and assigns a card for each of them. Answer your direct members' questions with send_message; pass up only what you cannot decide. ${ask} ${report}`;
   }
   const scoped = a.coordinator_id !== undefined;
   const receipt = 'Report the actual checks and uncovered cases. Use expected_failure only when a run reproduced the agreed failure. Keep logs and diffs out of the receipt.';
   const handoff = scoped
-    ? `\nUse report_specialist_result to send the final result to your immediate coordinator. ${receipt}`
-    : `${a.task_id === undefined ? '' : `\nNative task: ${a.task_id}`}\nUse report_specialist_result for the final handoff to Lead. ${receipt} Lead reviews the receipt and updates the task board.`;
-  return `You are the ${a.role} specialist. Your assignment is persisted by the specialist-team plugin.\nDeliverable: ${a.deliverable}\nRead paths: ${a.read_paths.join(', ')}\nWrite paths: ${a.write_paths.join(', ') || '(none)'}\nWorking directory: ${a.cwd}\nAllowed tools: ${a.allowed_tools.join(', ')}\nExact check commands (JSON): ${JSON.stringify(a.commands)}\nCheck owner: ${a.reviewer}\nStop when: ${a.stop_when}${handoff}\nDo only this role's assigned work. Never request a wider sandbox. Do not delegate, run unassigned checks, or repair another role's findings; commit or push only through exact assigned check commands. ${ask} Report completed work, unperformed checks and blockers with report_specialist_result, then stop. Tool guards enforce only these registered tool calls; they are not an OS sandbox.`;
+    ? `Use report_specialist_result to send the final result to your immediate coordinator. ${receipt}`
+    : `Use report_specialist_result for the final handoff to Lead. ${receipt} Lead reviews the receipt and updates the task board.`;
+  return `You are the ${a.role} specialist. Your assignment is persisted by the specialist-team plugin and listed in the Assignment block of your first message.\n${handoff}\nDo only this role's assigned work. Never request a wider sandbox. Do not delegate, run unassigned checks, or repair another role's findings; commit or push only through exact assigned check commands. ${ask} Report completed work, unperformed checks and blockers with report_specialist_result, then stop. Tool guards enforce only these registered tool calls; they are not an OS sandbox.`;
 }
