@@ -6,13 +6,22 @@ Ask DSH to delegate part of a task to a specialist. For example, have an enginee
 
 ## Install and try it
 
-1. Open the [latest release](https://github.com/p33333333333333l/dsh-specialist-team/releases/latest) to check the DSH and Node.js requirements. Under **Assets**, copy the `.tgz` link into DSH’s plugin manager. To install from the command line, replace `PACKAGE_URL` with that link and change `web` if you use a different profile.
+### Prerequisites
+
+- **Versions.** DSH `0.2.2-rc.4` and Node.js `>=22`.
+- **DSH plugins.** DSH’s Subagent plugin (`@deepseek-ai/dsh-subagent`) and Agent Teams plugin (`@deepseek-ai/dsh-agent-team`) come with DSH and are enabled by default. You do not install them, but keep both enabled: this plugin stays inactive without them.
+- **Agent Teams on.** Agent Teams is off by default in each conversation. In the main (top-level) conversation, select **Use Agent Teams** in the model and reasoning menu before you ask for a specialist. Otherwise the specialist tools are not offered, and the main agent works itself or starts an ordinary teammate.
+- **DSH Web.** The plugin’s settings page is part of the DSH Web interface, and the install command below uses the `web` profile.
+
+### Steps
+
+1. Open the [latest release](https://github.com/p33333333333333l/dsh-specialist-team/releases/latest). Under **Assets**, copy the `.tgz` link into DSH’s plugin manager. To install from the command line, replace `PACKAGE_URL` with that link and change `web` if you use a different profile.
 
    ```sh
    dsh plugin --profile web add PACKAGE_URL
    ```
 
-2. Reload DSH if the plugin manager reports a pending change. Open a main conversation and turn on **Agent Teams**.
+2. Reload DSH if the plugin manager reports a pending change. Open a main conversation with **Agent Teams** on.
 3. Send a request like the one below. If a researcher starts, its name appears in the team view, for example `researcher-read-docs`.
 
    > Ask a researcher to read only the project README and summarize what the project does in one sentence.
@@ -35,7 +44,7 @@ Every specialist and coordinator started through the plugin gets a card on the t
 
 For a regression, ask the main agent to put three stages on the task board: a verifier reproduces the failure, an engineer fixes it, and a separate verifier retests it. Each specialist reports under its task ID. The next task becomes ready when the main agent reviews the result and completes the current card.
 
-For work that splits into independent groups, ask the main agent to “use multi-level dispatch for this task and have each group coordinator assign specialists and summarize their results.” DSH needs a subagent depth of at least 2 and at least two shared active slots; a deeper subagent depth allows sub-coordinators. With full-power mode on (below), the main agent dispatches this way by default. [Multi-level dispatch and recovery](docs/advanced.md#multi-level-dispatch)
+For work that splits into independent groups, ask the main agent to “use multi-level dispatch for this task and have each group coordinator assign specialists and summarize their results.” This needs a subagent depth of at least 2 and at least two shared active slots, but DSH’s default depth is 1. Raise `maxDepth` first (the link below shows how); a deeper subagent depth allows sub-coordinators. With full-power mode on (below), the main agent dispatches this way by default and raises these limits itself. [Multi-level dispatch and recovery](docs/advanced.md#multi-level-dispatch)
 
 ## Choose a specialist model
 
@@ -49,12 +58,17 @@ If DSH rejects the model, check that **Subagent settings** allows model selectio
 
 To give the team a goal and get on with other work, turn on **Full-power mode** in **Specialist model settings**. For everyday work, leave it off; the main agent can then work directly and delegate as needed.
 
+Before you turn it on:
+
+- Agent Teams must be on in the main conversation, because the mode only takes effect there. DSH’s Subagent plugin must be active, or the limits below are not raised.
+- The main agent keeps only dispatch and coordination tools and uses native tool calls instead of Programmatic Tool Calling (PTC). To get PTC back, turn the mode off and reopen the conversation ([details](docs/advanced.md#restore-programmatic-tool-calling)).
+
 While it is on:
 
 - The main agent only splits and dispatches work and does not read or write files itself. Group coordinators split their groups further and keep as many specialists working at once as they can.
 - The plugin raises the live subagent depth to 3 and the number of subagents running at once to 100. Higher values you set are kept. Your own values come back when you turn the mode off or disable the plugin.
 - Specialists and coordinators take questions to their direct superior first, and questions move up level by level. The main agent asks you only when the goal is unclear, an irreversible or external action lacks your approval, or credentials are needed.
-- A verifier runs the exact git commands the main agent assigns for commits and pushes.
+- Commits and pushes happen only if you have authorized them. An independent verifier runs the exact git commands the main agent assigns.
 
 More specialists run at once, so model costs rise. Turn the mode off before uninstalling the plugin; otherwise the main agent in already open conversations stays limited to dispatching.
 
