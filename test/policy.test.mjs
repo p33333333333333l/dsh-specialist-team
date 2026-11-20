@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  assignmentFrom, assignmentIn, coordinatorAssignmentFrom, scopedAssignment, rolePrompt,
+  assignmentFrom, assignmentIn, coordinatorAssignmentFrom, groupIdOf, scopedAssignment, rolePrompt,
   toolDenial, leadToolDenial, COORDINATOR_TOOLS, ASSIGNMENT_RECORD,
 } from '../src/policy.mjs';
 import { specialistSpawn } from '../src/spawn.mjs';
@@ -49,7 +49,10 @@ test('verifier can execute only exact assigned commands without escalation', () 
   assert.equal(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test' } }), undefined);
   assert.ok(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test; echo nope' } }));
   assert.ok(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', run_in_background: true } }));
-  assert.ok(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', sandbox_permissions: 'danger-full-access' } }));
+  assert.match(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', sandbox_permissions: 'danger-full-access' } }), /Retry the same call once without sandbox_permissions/);
+  for (const sandbox_permissions of ['', null]) {
+    assert.equal(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', sandbox_permissions } }), undefined);
+  }
 });
 
 test('uses each tool actual path field despite extraneous path aliases', () => {
@@ -131,12 +134,13 @@ test('scoped leaves cannot widen matching paths or Lead-approved commands or use
   const input = make(join(group.cwd, 'project'));
   const leaf = assignmentFrom(input, cwd);
   const scoped = scopedAssignment(leaf, group, 'parent');
-  assert.deepEqual(scoped, { ...leaf, coordinator_id: 'parent' });
+  assert.deepEqual(scoped, { ...leaf, coordinator_id: 'parent', coordinator_chain: [{ id: 'parent', max_specialists: 2 }] });
   assert.throws(() => scopedAssignment(leaf, group, ' '), /coordinator_id/);
   assert.throws(() => scopedAssignment({ ...leaf, task_id: group.task_id }, group, 'parent'), /task_id/);
   assert.throws(() => scopedAssignment({ ...leaf, read_paths: [join(group.cwd, 'project-other')] }, group, 'parent'), /read_paths/);
   assert.throws(() => scopedAssignment({ ...leaf, write_paths: [join(group.cwd, 'project', 'docs')] }, group, 'parent'), /write_paths/);
   assert.throws(() => assignmentFrom({ ...input, assignment: { ...input.assignment, coordinator_id: 'parent' } }, cwd), /coordinator_id/);
+  assert.throws(() => assignmentFrom({ ...input, assignment: { ...input.assignment, coordinator_chain: [] } }, cwd), /coordinator_chain/);
 
   const verifier = make(join(group.cwd, 'project'), 'verifier');
   verifier.assignment.allowed_tools.push('bash');
@@ -152,6 +156,28 @@ test('scoped leaves cannot widen matching paths or Lead-approved commands or use
   assert.doesNotMatch(rolePrompt(scoped), /Lead/);
 });
 
+test('sub-coordinators share the parent card, narrow its scope and carry the budget chain', t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'specialist-subgroup-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const top = coordinatorAssignmentFrom({ ...makeGroup(), max_specialists: 5, commands: ['npm test'] }, cwd);
+  const sub = scopedAssignment(coordinatorAssignmentFrom({ ...makeGroup(), max_specialists: 2 }, cwd), top, 'top');
+  assert.equal(sub.coordinator_id, 'top');
+  assert.deepEqual(sub.coordinator_chain, [{ id: 'top', max_specialists: 5 }]);
+  assert.throws(() => scopedAssignment(coordinatorAssignmentFrom({ ...makeGroup(), task_id: 'other' }, cwd), top, 'top'), /parent group task_id/);
+  assert.throws(() => scopedAssignment(coordinatorAssignmentFrom({ ...makeGroup(), read_paths: ['.'], write_paths: [] }, cwd), top, 'top'), /read_paths/);
+  const leaf = scopedAssignment(assignmentFrom(make(join(top.cwd, 'project')), cwd), sub, 'sub');
+  assert.deepEqual(leaf.coordinator_chain, [{ id: 'top', max_specialists: 5 }, { id: 'sub', max_specialists: 2 }]);
+  assert.equal(groupIdOf(leaf, 'leaf'), 'top');
+  assert.equal(groupIdOf(sub, 'sub'), 'top');
+  assert.equal(groupIdOf(top, 'top'), 'top');
+  assert.equal(groupIdOf({ coordinator_id: 'legacy' }, 'leaf'), 'legacy');
+  assert.match(rolePrompt(top, true), /spawn_specialist_coordinator/);
+  assert.match(rolePrompt(top, true), /send Lead a scoped group receipt/);
+  assert.match(rolePrompt(sub), /send your immediate coordinator a scoped subgroup receipt/);
+  assert.match(rolePrompt(sub), /without waiting for an assignment/);
+  assert.doesNotMatch(rolePrompt(sub), /spawn_specialist_coordinator/);
+});
+
 test('replay validates durable coordinator and scoped leaf records and rejects path drift', () => {
   const dir = mkdtempSync(join(tmpdir(), 'specialist-group-replay-'));
   try {
@@ -163,7 +189,15 @@ test('replay validates durable coordinator and scoped leaf records and rejects p
     } }, memberId);
     assert.deepEqual(replay('parent', group), group);
     assert.deepEqual(replay('leaf', leaf), leaf);
-    assert.throws(() => replay('parent', { ...group, coordinator_id: 'grandparent' }), /coordinator_id/);
+    assert.throws(() => replay('parent', { ...group, coordinator_id: 'grandparent' }), /coordinator_chain/);
+    const { coordinator_chain: _chain, ...legacyLeaf } = leaf;
+    assert.deepEqual(replay('leaf', legacyLeaf), legacyLeaf);
+    assert.throws(() => replay('leaf', { ...legacyLeaf, coordinator_chain: [{ id: 'other', max_specialists: 2 }] }), /end with coordinator_id/);
+    const { coordinator_id: _id, ...unlinked } = leaf;
+    assert.throws(() => replay('leaf', unlinked), /requires coordinator_id/);
+    const sub = scopedAssignment(coordinatorAssignmentFrom({ ...makeGroup(), write_paths: [] }, dir), group, 'parent');
+    assert.deepEqual(replay('sub', sub), sub);
+    assert.throws(() => replay('sub', { ...sub, coordinator_chain: [{ id: 'parent', max_specialists: 0 }] }), /budgets/);
     assert.throws(() => replay('leaf', { ...leaf, coordinator_id: ' ' }), /coordinator_id/);
     assert.throws(() => replay('leaf', { ...leaf, task_id: group.task_id }), /task_id/);
 

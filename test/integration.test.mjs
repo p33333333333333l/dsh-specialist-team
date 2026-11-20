@@ -157,7 +157,7 @@ test('Lead sees live dispatch limits before starting any specialist', options, a
     return prompt.contexts.find(section => section.text.includes('Specialist dispatch capability:')).text;
   };
   const beforeDispatch = await readRouting();
-  assert.match(beforeDispatch, /limited to two delegation levels/);
+  assert.match(beforeDispatch, /nests up to the host depth cap/);
   assert.match(beforeDispatch, /Host depth cap: 2/);
   assert.match(beforeDispatch, /Root tree active-child cap: 3 \(shared, not free slots\)/);
   assert.match(beforeDispatch, /Coordinator mode: strict/);
@@ -445,6 +445,140 @@ test('group specialist budget survives concurrent starts and cold recovery', opt
   const restoredGroup = await member(revived.ctx, restoredLead, input.name);
   await call(revived.ctx, restoredLead, 'spawn_teammate', specialist(groupRoot, 'researcher-flat'), /group coordination/i);
   await call(revived.ctx, restoredGroup, 'spawn_teammate', specialist(groupRoot, 'researcher-third'), /specialist start limit/);
+});
+
+const subCoordinator = (root, taskId, max_specialists = 2) => ({
+  ...ordinary('coordinator-sub'), assignment: {
+    task_id: taskId, deliverable: 'Subgroup report', stop_when: 'Subgroup result delivered',
+    read_paths: [join(root, 'sub')], write_paths: [], max_specialists,
+  },
+});
+const receiptsOf = agent => agent.session.snapshotEvents()
+  .filter(event => event.type === 'agent/inbox/spliced')
+  .flatMap(event => event.data.inserted)
+  .filter(message => message.source?.kind === 'agent-message')
+  .map(message => ({ senderId: message.source.senderSessionId, text: message.content.map(block => block.text).join('\n') }));
+
+test('nested groups follow the host depth, share one budget and report through each coordinator', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, adapter, lead: createLead } = await fixture.start({}, { subagentConfig: { maxDepth: 3 } });
+  const lead = await createLead();
+  const task = await ctx.agentTeams.createTask(lead, { subject: 'Nested group', description: 'Coordinate nested work' });
+  const input = { ...coordinator(fixture.root, task.id), assignment: { ...coordinator(fixture.root, task.id).assignment, max_specialists: 4 } };
+  const groupRoot = input.assignment.read_paths[0];
+  await call(ctx, lead, 'spawn_specialist_coordinator', input);
+  const top = await member(ctx, lead, input.name);
+  assert.match(requestText(await firstRequest(adapter, top.id)), /spawn_specialist_coordinator/);
+  await ctx.agentTeams.updateTask(lead, { action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: top.id });
+
+  await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(groupRoot, task.id, 4), /costs 1 plus/);
+  await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(groupRoot, 'other-task'), /parent group task_id/);
+  await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(fixture.root, task.id), /read_paths/);
+  const subInput = subCoordinator(groupRoot, task.id);
+  assert.match(await call(ctx, top, 'spawn_specialist_coordinator', subInput), /shares your group card/);
+  await call(ctx, top, 'spawn_specialist_coordinator', { ...subCoordinator(groupRoot, task.id, 1), name: 'coordinator-other' }, /only 1 of this group's 4-specialist/);
+  const sub = await member(ctx, lead, `${input.name}/${subInput.name}`);
+  const subPrompt = requestText(await firstRequest(adapter, sub.id));
+  assert.match(subPrompt, /send your immediate coordinator a scoped subgroup receipt/);
+  assert.doesNotMatch(subPrompt, /spawn_specialist_coordinator/);
+  await call(ctx, sub, 'spawn_specialist_coordinator', { ...subInput, name: 'coordinator-deeper' }, /unknown tool|not available|depth/i);
+
+  const subRoot = subInput.assignment.read_paths[0];
+  await call(ctx, sub, 'spawn_teammate', specialist(groupRoot, 'researcher-wide'), /read_paths/);
+  await call(ctx, sub, 'spawn_teammate', specialist(subRoot, 'researcher-first'));
+  await call(ctx, sub, 'spawn_teammate', specialist(subRoot, 'researcher-second'));
+  await call(ctx, sub, 'spawn_teammate', specialist(subRoot, 'researcher-third'), /2-specialist start limit/);
+  await call(ctx, top, 'spawn_teammate', specialist(groupRoot, 'researcher-direct'));
+  await call(ctx, top, 'spawn_teammate', specialist(groupRoot, 'researcher-extra'), /4-specialist start limit/);
+  const descendants = await ctx.subagents.listDescendants(lead.id, signal);
+  assert.deepEqual(descendants.map(entry => [entry.path, entry.depth]), [
+    [input.name, 1], [`${input.name}/${subInput.name}`, 2],
+    [`${input.name}/${subInput.name}/researcher-first`, 3], [`${input.name}/${subInput.name}/researcher-second`, 3],
+    [`${input.name}/researcher-direct`, 2],
+  ]);
+
+  const leaf = await member(ctx, lead, `${input.name}/${subInput.name}/researcher-first`);
+  await call(ctx, leaf, 'send_message', { agent: 'lead', message: 'Bypass' }, /coordinator|does not allow|unknown tool/i);
+  await call(ctx, leaf, 'report_specialist_result', { status: 'delivered', summary: 'Leaf observations.' });
+  assert.deepEqual(receiptsOf(sub).map(receipt => receipt.senderId), [leaf.id]);
+  await call(ctx, sub, 'report_specialist_result', { status: 'delivered', summary: 'Subgroup observations.' });
+  assert.deepEqual(receiptsOf(top).map(receipt => receipt.senderId), [sub.id]);
+  assert.ok(receiptsOf(top)[0].text.includes('Subgroup observations.'));
+  assert.deepEqual(receiptsOf(lead), []);
+  await call(ctx, top, 'report_specialist_result', { status: 'delivered', summary: 'Group observations.' });
+  assert.deepEqual(receiptsOf(lead).map(receipt => receipt.senderId), [top.id]);
+  assert.ok(receiptsOf(lead)[0].text.includes(task.id));
+});
+
+test('a sub-coordinator budget stays reserved across cold recovery', options, async t => {
+  const fixture = workspace(t);
+  const subagentConfig = { maxDepth: 3 };
+  const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig });
+  const lead = await createLead();
+  const task = await ctx.agentTeams.createTask(lead, { subject: 'Reserved group', description: 'Keep sub-budgets after restart' });
+  const input = { ...coordinator(fixture.root, task.id), assignment: { ...coordinator(fixture.root, task.id).assignment, max_specialists: 4 } };
+  const groupRoot = input.assignment.read_paths[0];
+  assert.match(await call(ctx, lead, 'spawn_specialist_coordinator', input), /Reassign the group card/);
+  const top = await member(ctx, lead, input.name);
+  await ctx.agentTeams.updateTask(lead, { action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: top.id });
+  await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(groupRoot, task.id));
+
+  await ctx.fiber.dispose();
+  const revived = await fixture.start({}, { subagentConfig });
+  const { agent: restoredLead } = await revived.ctx.agents.resume({ resumeSessionId: lead.id, agentOptions: route });
+  await call(revived.ctx, restoredLead, 'send_message', { agent: input.name, message: 'Recover the group.' });
+  const restoredTop = await member(revived.ctx, restoredLead, input.name);
+  await call(revived.ctx, restoredTop, 'spawn_specialist_coordinator', { ...subCoordinator(groupRoot, task.id, 1), name: 'coordinator-other' }, /costs 1 plus/);
+  await call(revived.ctx, restoredTop, 'spawn_teammate', specialist(groupRoot, 'researcher-direct'));
+  await call(revived.ctx, restoredTop, 'spawn_teammate', specialist(groupRoot, 'researcher-extra'), /4-specialist start limit/);
+});
+
+test('concurrent sub-coordinator starts in different groups keep one root-tree slot for specialists', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig: { maxDepth: 3, maxActiveSubagents: 4 } });
+  const lead = await createLead();
+  const tops = [];
+  for (const name of ['coordinator-alpha', 'coordinator-beta']) {
+    const task = await ctx.agentTeams.createTask(lead, { subject: name, description: 'Coordinate one group' });
+    const input = { ...coordinator(fixture.root, task.id), name, assignment: { ...coordinator(fixture.root, task.id).assignment, max_specialists: 4 } };
+    await call(ctx, lead, 'spawn_specialist_coordinator', input);
+    const top = await member(ctx, lead, name);
+    await ctx.agentTeams.updateTask(lead, { action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: top.id });
+    tops.push({ top, sub: subCoordinator(input.assignment.read_paths[0], task.id) });
+  }
+  const starts = await Promise.allSettled(tops.map(({ top, sub }) => call(ctx, top, 'spawn_specialist_coordinator', sub)));
+  assert.equal(starts.filter(result => result.status === 'fulfilled').length, 1);
+  assert.match(starts.find(result => result.status === 'rejected').reason.message, /no slot for specialists/);
+});
+
+test('a sub-coordinator start keeps one root-tree slot for specialists', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, lead: createLead } = await fixture.start({}, { subagentConfig: { maxDepth: 3, maxActiveSubagents: 2 } });
+  const lead = await createLead();
+  const task = await ctx.agentTeams.createTask(lead, { subject: 'Tight group', description: 'Coordinate with two slots' });
+  const input = { ...coordinator(fixture.root, task.id), assignment: { ...coordinator(fixture.root, task.id).assignment, max_specialists: 4 } };
+  const groupRoot = input.assignment.read_paths[0];
+  await call(ctx, lead, 'spawn_specialist_coordinator', input);
+  const top = await member(ctx, lead, input.name);
+  await ctx.agentTeams.updateTask(lead, { action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: top.id });
+  await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(groupRoot, task.id), /no slot for specialists/);
+  await call(ctx, top, 'spawn_teammate', specialist(groupRoot, 'researcher-direct'));
+});
+
+test('a coordinator cannot nest when the host depth leaves no room for its specialists', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, adapter, lead: createLead } = await fixture.start({}, { subagentConfig: { maxDepth: 2 } });
+  const lead = await createLead();
+  const task = await ctx.agentTeams.createTask(lead, { subject: 'Flat group', description: 'Coordinate at depth two' });
+  const input = coordinator(fixture.root, task.id);
+  await call(ctx, lead, 'spawn_specialist_coordinator', input);
+  const top = await member(ctx, lead, input.name);
+  const prompt = requestText(await firstRequest(adapter, top.id));
+  assert.match(prompt, /Spawn only fresh leaf specialists/);
+  assert.doesNotMatch(prompt, /spawn_specialist_coordinator/);
+  await ctx.agentTeams.updateTask(lead, { action: 'reassign', taskId: task.id, expectedRevision: task.revision, owner: top.id });
+  await call(ctx, top, 'spawn_specialist_coordinator', subCoordinator(input.assignment.read_paths[0], task.id), /unknown tool|not available|depth/i);
+  assert.deepEqual((await ctx.subagents.listDescendants(lead.id, signal)).map(entry => entry.depth), [1]);
 });
 
 test('specialist names must match the assigned role and include a task slug', options, async t => {

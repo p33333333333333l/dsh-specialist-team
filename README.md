@@ -33,7 +33,7 @@ A specialist starts with a fresh conversation by default. Include any findings o
 
 For a regression, ask the main agent to put three stages on the task board: a verifier reproduces the failure, an engineer fixes it, and a separate verifier retests it. Each specialist reports under its task ID. The next task becomes ready when the main agent reviews the result and completes the current card.
 
-For work that splits into independent groups, ask the main agent to “use two-level dispatch for this task and have each group coordinator assign specialists and summarize their results.” DSH needs a subagent depth of at least 2 and at least two shared active slots. [Two-level dispatch and recovery](docs/advanced.md#opt-into-two-level-dispatch)
+For work that splits into independent groups, ask the main agent to “use multi-level dispatch for this task and have each group coordinator assign specialists and summarize their results.” DSH needs a subagent depth of at least 2 and at least two shared active slots; a deeper subagent depth allows sub-coordinators. [Multi-level dispatch and recovery](docs/advanced.md#opt-into-multi-level-dispatch)
 
 ## Choose a specialist model
 
