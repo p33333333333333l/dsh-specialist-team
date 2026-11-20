@@ -29,6 +29,7 @@ const GROUP_RECORD = 'plugin:specialist-team/group';
 const SUBGROUP_RECORD = 'plugin:specialist-team/subgroup';
 const GROUP_TOOLS = new Set(['spawn_teammate', GROUP_TOOL, REPORT_TOOL, 'team_task_get', 'wait_agent']);
 const COORDINATOR_NAME = /^coordinator-[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+const DENIAL_LIMIT = 3;
 const pathList = { type: 'array', required: true, items: { type: 'string' } };
 
 function rootActiveCap(ctx) {
@@ -154,6 +155,18 @@ export function apply(ctx, config = {}) {
     return lead;
   };
   const lifetime = new AbortController();
+  // Interrupt a member that keeps hitting guard denials and tell its direct creator why.
+  const stopLooping = async (agent, toolName, reason) => {
+    try {
+      const lead = ctx.subagents.rootOf(agent);
+      ctx.subagents.interrupt(agent.id, { kind: 'ancestor', agent: lead });
+      const entry = (await ctx.subagents.listDescendants(lead.id, lifetime.signal)).find(item => item.id === agent.id);
+      const text = `${ctx.subagents.namesOf(agent).self} was stopped after ${DENIAL_LIMIT} tool denials in a row. Last denied ${toolName}: ${reason}\nRemove the blocker or adjust the assignment before messaging it to continue, or close it.`;
+      await ctx.subagents.sendMessage(agent, entry?.parentId ?? lead.id, [{ type: 'text', text }], { signal: lifetime.signal });
+    } catch (error) {
+      ctx.logger?.warn?.(`specialist-team: could not stop looping member ${agent.id}: ${error?.message ?? error}`);
+    }
+  };
   const useNativeExecutor = agent => {
     const policy = agent[agentPolicy];
     if (policy.nativeExecutor) return;
@@ -231,9 +244,23 @@ export function apply(ctx, config = {}) {
     }
     let loading = true;
     let assignment = policy.assignment;
+    let denials = 0;
     policy.check = exec => {
       if (stopped && assignment) return 'Specialist policy was unloaded. Reopen this session before continuing.';
       if (loading) return 'Specialist policy is still loading.';
+      if (!assignment) return check(exec);
+      const reason = check(exec);
+      if (!reason) {
+        denials = 0;
+        return;
+      }
+      // Prompts alone do not stop a model that keeps retrying a denied call, so the guard stops the run.
+      if (++denials < DENIAL_LIMIT) return `${reason} (Denial ${denials} of ${DENIAL_LIMIT} in a row; at ${DENIAL_LIMIT} this run is stopped.)`;
+      denials = 0;
+      void stopLooping(agent, exec.name, reason);
+      return `${reason} This was denial ${DENIAL_LIMIT} in a row, so the plugin stopped this run and told your parent agent. Do not retry.`;
+    };
+    const check = exec => {
       if (!assignment) {
         const strict = stopped ? lastMode === 'strict' && policy.teamEnabled : mode() === 'strict' && isLead(agent);
         if (policy.teamEnabled && (startingGroups.has(agent.id) || hasOpenGroup(agent))) {

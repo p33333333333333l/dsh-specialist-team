@@ -12,6 +12,8 @@ Use `context: fork` to share the main conversation’s history. Omit the optiona
 
 Tool and path restrictions apply to registered tool calls. They do not sandbox subprocesses. Before assigning a verifier command, check what it and any subprocesses can read, change, or access over the network.
 
+If a specialist or coordinator has 3 tool calls denied in a row, the plugin stops its run and messages its direct parent with the last denied tool and reason. Any allowed call resets the count. Remove the blocker or adjust the assignment before you message it to continue.
+
 ## Link an assignment to a task card
 
 After creating a native task, pass its ID as `assignment.task_id` in `spawn_teammate`. The task’s dependencies must be complete. Once the specialist starts, the main agent assigns it the task on the native board so it can send the receipt. Assignments without a task ID still work as before.
