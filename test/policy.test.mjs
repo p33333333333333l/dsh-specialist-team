@@ -49,7 +49,10 @@ test('verifier can execute only exact assigned commands without escalation', () 
   assert.equal(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test' } }), undefined);
   assert.ok(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test; echo nope' } }));
   assert.ok(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', run_in_background: true } }));
-  assert.ok(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', sandbox_permissions: 'danger-full-access' } }));
+  assert.match(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', sandbox_permissions: 'danger-full-access' } }), /Retry the same call once without sandbox_permissions/);
+  for (const sandbox_permissions of ['', null]) {
+    assert.equal(toolDenial(policy, { name: 'bash', arguments: { command: 'npm test', sandbox_permissions } }), undefined);
+  }
 });
 
 test('uses each tool actual path field despite extraneous path aliases', () => {
