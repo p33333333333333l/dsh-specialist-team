@@ -33,7 +33,21 @@ A specialist can message only its direct parent. A coordinator can also message 
 
 ## Multi-level dispatch
 
-Users can request multi-level dispatch for a task. In full-power mode the main agent uses it by default, and the raised limits (depth 3, 100 subagents) meet the requirements below. DSH must allow a subagent depth of at least 2 and at least two active slots shared across the agent tree. The number of levels follows the DSH subagent depth: with depth 2 the tree is main agent → coordinator → specialist, and each extra level lets a coordinator start a sub-coordinator. With a depth of 1, the main agent explains the limit and asks the user before switching to direct dispatch.
+Conditions for multi-level dispatch:
+
+- **Depth.** DSH’s default subagent depth (`maxDepth`) is 1, which allows direct children only. The chain main agent → coordinator → specialist needs `maxDepth` of 2 or more on the Subagent plugin (`@deepseek-ai/dsh-subagent`).
+- **Slots.** The shared active slots (`maxActiveSubagents`, default 8) must number at least 2. The plugin keeps one slot free for specialists.
+- **Your request.** Outside full-power mode, ask for multi-level dispatch for that task. In full-power mode the main agent uses it by default and raises both limits itself, to depth 3 and 100 subagents, so you need not set them.
+
+Set the depth in the Subagent plugin settings, or in the profile’s `cordis.patch.yml` (see [Edit the profile YAML](#edit-the-profile-yaml)). A patch replaces the row’s whole `config`, and unlisted keys keep their defaults:
+
+```yaml
+- id: subagent
+  config:
+    maxDepth: 2
+```
+
+The number of levels follows the DSH subagent depth: with depth 2 the tree is main agent → coordinator → specialist, and each extra level lets a coordinator start a sub-coordinator. With a depth of 1, the main agent explains the limit and asks the user before switching to direct dispatch.
 
 1. The **main agent** creates one native task card per group. Once dependencies are complete, it starts the coordinator using `spawn_specialist_coordinator`. The plugin assigns the card to the coordinator, which starts on its own.
 2. The **coordinator** uses `spawn_teammate` to assign specialists within the approved paths and exact verifier commands. `max_specialists` caps the number of starts in the group's whole subtree over its lifetime. Specialists report to their own coordinator.
