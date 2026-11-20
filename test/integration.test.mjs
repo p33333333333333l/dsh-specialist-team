@@ -768,7 +768,10 @@ test('task-linked reports hand off reproduction, repair and retest through the n
   const restored = await fixture.start();
   const { agent } = await restored.ctx.agents.resume({ resumeSessionId: retestId, agentOptions: route });
   const prompt = await restored.ctx.systemPrompt.assemble({ agent, scope: agent });
-  assert.ok(prompt.contexts.some(section => section.text.includes(`Native task: ${retest.id}`)));
+  // The assignment is no longer in the system prompt; the resumed child keeps it in its first user message.
+  assert.ok(prompt.contexts.some(section => section.text.includes('You are the verifier specialist')));
+  assert.ok(!prompt.contexts.some(section => section.text.includes(`Native task: ${retest.id}`)));
+  assert.ok(JSON.stringify(agent.session.snapshotEvents()).includes(`Native task: ${retest.id}`));
 });
 
 test('fresh and fork specialists retain scope through first request and cold restore', options, async t => {
@@ -810,6 +813,38 @@ test('fresh and fork specialists retain scope through first request and cold res
   assert.equal(reads.length, 2);
   await restored.policyFiber.dispose();
   await call(restored.ctx, restored.ctx.agents.get(ids[0]), 'read', { file_path: fixture.root }, /policy was unloaded/);
+});
+
+test('same-role specialists share one system prompt and differ only in the first user message', options, async t => {
+  const fixture = workspace(t);
+  const { ctx, adapter, lead: createLead } = await fixture.start();
+  const lead = await createLead();
+  const slugs = ['one', 'two'];
+  const systems = [];
+  const firsts = [];
+  for (const slug of slugs) {
+    const input = specialist(fixture.root, `researcher-${slug}`);
+    input.prompt = `Inspect the ${slug} files`;
+    input.assignment.deliverable = `Report on ${slug}`;
+    input.assignment.stop_when = `${slug} reported`;
+    await call(ctx, lead, 'spawn_teammate', input);
+    const child = await member(ctx, lead, input.name);
+    const request = await firstRequest(adapter, child.id);
+    const prompt = await ctx.systemPrompt.assemble({ agent: child, scope: child });
+    systems.push(prompt.contexts.find(section => section.text.includes('You are the researcher specialist')).text);
+    const carriers = request.messages.filter(message => message.content.some(block => block.text?.includes(`Deliverable: Report on ${slug}`)));
+    assert.equal(carriers.length, 1);
+    firsts.push(carriers[0].content.map(block => block.text ?? '').join('\n'));
+  }
+  assert.equal(systems[0], systems[1]);
+  assert.doesNotMatch(systems[0], /Deliverable|Read paths|Write paths|Allowed tools|Check owner|Stop when|Direct parent|Report on|researcher-/);
+  assert.notEqual(firsts[0], firsts[1]);
+  slugs.forEach((slug, index) => {
+    for (const expected of [`Deliverable: Report on ${slug}`, `Stop when: ${slug} reported`, `Read paths: ${fixture.root}`, 'Direct parent: lead', `Inspect the ${slug} files`]) {
+      assert.ok(firsts[index].includes(expected), expected);
+    }
+    assert.ok(!firsts[index].includes('You are the researcher specialist'));
+  });
 });
 
 test('specialist scope checks the actual search path and exact verifier command', options, async t => {
