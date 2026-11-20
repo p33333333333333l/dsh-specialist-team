@@ -98,8 +98,6 @@ export function apply(ctx, config = {}) {
     const { status } = ctx.agentTeams.getTask(lead, taskId);
     return status !== 'completed' && status !== 'deleted';
   };
-  const hasOpenGroup = lead => [...(lead[agentPolicy]?.groups?.values() ?? [])]
-    .some(taskId => isOpenGroupTask(lead, taskId));
   // A coordinator can nest only when its sub-coordinator's specialists still fit the host depth cap.
   const canNest = agent => {
     if (!coordinatorOf(agent)) return false;
@@ -174,6 +172,14 @@ export function apply(ctx, config = {}) {
     policy.nativeExecutor = true;
   };
   const mode = () => readConfig(config.coordinatorMode) ?? 'off';
+  // The member's current sandbox mode, or undefined when this composition has no sandbox policy.
+  const sandboxModeOf = agent => {
+    try {
+      return ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode;
+    } catch {
+      return undefined;
+    }
+  };
   let stopped = false;
   let lastMode;
   const isLead = agent => {
@@ -263,10 +269,6 @@ export function apply(ctx, config = {}) {
     const check = exec => {
       if (!assignment) {
         const strict = stopped ? lastMode === 'strict' && policy.teamEnabled : mode() === 'strict' && isLead(agent);
-        if (policy.teamEnabled && (startingGroups.has(agent.id) || hasOpenGroup(agent))) {
-          if (exec.name === 'spawn_teammate') return `During group coordination, dispatch through ${GROUP_TOOL}.`;
-          return leadToolDenial(exec);
-        }
         return strict ? leadToolDenial(exec) : undefined;
       }
       if (assignment.role === 'coordinator') {
@@ -279,7 +281,7 @@ export function apply(ctx, config = {}) {
       if (exec.name === 'send_message') {
         return exec.arguments?.agent === 'lead' ? undefined : 'Specialists report only to Lead.';
       }
-      return toolDenial(assignment, exec, ctx.workingDirectory.get(agent.session));
+      return toolDenial(assignment, exec, ctx.workingDirectory.get(agent.session), sandboxModeOf(agent));
     };
     const own = assignmentIn(agent, agent.id);
     assignment = own ?? initial;
@@ -314,7 +316,7 @@ export function apply(ctx, config = {}) {
       }
       // A prepared group is usable only after DSH commits the native child.
       for (const id of policy.groups.keys()) if (!cataloged.has(id)) policy.groups.delete(id);
-      if (policy.teamEnabled && (mode() === 'strict' || hasOpenGroup(agent))) useNativeExecutor(agent);
+      if (policy.teamEnabled && mode() === 'strict') useNativeExecutor(agent);
     }
     policy.assignment = assignment;
     loading = false;
@@ -326,18 +328,13 @@ export function apply(ctx, config = {}) {
     if (mode() === 'strict') for (const agent of installed) if (isLead(agent)) useNativeExecutor(agent);
   });
   ctx.on('session/event', (session, event) => {
-    if (event.type !== 'team/mode' && event.type !== 'team/task') return;
+    if (event.type !== 'team/mode') return;
     const agent = ctx.agents.get(session.id);
     if (!installed.has(agent)) return;
     const policy = agent[agentPolicy];
-    if (event.type === 'team/mode') {
-      // Keep the last Team mode for the guard that outlives this plugin context.
-      policy.teamEnabled = event.data.enabled;
-      if (policy.teamEnabled && (mode() === 'strict' || hasOpenGroup(agent))) useNativeExecutor(agent);
-    } else if (policy.teamEnabled && event.data.task.status !== 'completed' && event.data.task.status !== 'deleted'
-        && [...(policy.groups?.values() ?? [])].includes(event.data.task.id)) {
-      useNativeExecutor(agent);
-    }
+    // Keep the last Team mode for the guard that outlives this plugin context.
+    policy.teamEnabled = event.data.enabled;
+    if (policy.teamEnabled && mode() === 'strict') useNativeExecutor(agent);
   });
   ctx.systemPrompt.context({
     name: 'specialist-team:routing',
@@ -409,7 +406,6 @@ export function apply(ctx, config = {}) {
     await preflightGroup(lead, signal);
     requireTask(ctx, lead, taskId);
     signal.throwIfAborted();
-    useNativeExecutor(lead);
     appendPluginRecord(lead.session, GROUP_RECORD, { leadId: lead.id, coordinatorId: childId, taskId });
     await ctx.sessions.flush(lead.session);
     requireTask(ctx, lead, taskId);
@@ -511,9 +507,7 @@ export function apply(ctx, config = {}) {
       if (!isLead(parent)) throw new Error('Enable Agent Teams in the root session before spawning a specialist.');
       const agentOptions = await selectModel(ctx, parent, args, readConfig(config.models)?.[args.specialist], signal);
       signal.throwIfAborted();
-      if (stopped || !isLead(parent) || startingGroups.has(parent.id) || hasOpenGroup(parent)) {
-        throw new Error('Direct specialist dispatch is unavailable during group coordination.');
-      }
+      if (stopped || !isLead(parent)) throw new Error('Enable Agent Teams in the root session before spawning a specialist.');
       const assignment = args.specialistAssignment;
       if (assignment.task_id !== undefined) requireTask(ctx, parent, assignment.task_id);
       const started = await start(parent, args, assignment, signal, agentOptions);
