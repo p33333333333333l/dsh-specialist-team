@@ -66,6 +66,7 @@ Before you turn it on:
 While it is on:
 
 - The main agent only splits and dispatches work and does not read or write files itself. Group coordinators split their groups further and keep as many specialists working at once as they can.
+- The main agent keeps driving until the goal is met: after every delivery it re-checks the board and starts all ready tasks at once. When everything is done, it has an independent verifier or architect look for defects and improvements, and wraps up only when that review finds nothing new.
 - The plugin raises the live subagent depth to 3 and the number of subagents running at once to 100. Higher values you set are kept. Your own values come back when you turn the mode off or disable the plugin.
 - Specialists and coordinators take questions to their direct superior first, and questions move up level by level. The main agent asks you only when the goal is unclear, an irreversible or external action lacks your approval, or credentials are needed.
 - Commits and pushes happen only if you have authorized them. An independent verifier runs the exact git commands the main agent assigns.
