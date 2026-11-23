@@ -168,6 +168,7 @@ test('full-power mode raises live dispatch limits and restores the user values',
   assert.deepEqual(live(), [3, 100]);
   const beforeDispatch = await readRouting();
   assert.match(beforeDispatch, /Lead dispatches through group coordinators by default/);
+  assert.match(beforeDispatch, /Drive the goal to completion/);
   assert.match(beforeDispatch, /nests up to the host depth cap/);
   assert.match(beforeDispatch, /Host depth cap: 3/);
   assert.match(beforeDispatch, /Root tree active-child cap: 100 \(shared, not free slots\)/);
